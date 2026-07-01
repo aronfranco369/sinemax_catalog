@@ -1,12 +1,17 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { normalize, scoreMatch, CONFIDENCE_THRESHOLD, type Candidate } from '@/lib/resolveMatch'
 
-// Server-only client — uses the service role key so RLS never blocks writes.
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+export const dynamic = 'force-dynamic'
+
+// Lazily created so this module can be safely imported/analyzed at build
+// time, before runtime env vars (like the service role key) are injected.
+function getSupabaseAdmin(): SupabaseClient {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  )
+}
 
 const STOPWORDS = new Set(['the', 'and', 'part', 'episode', 'season'])
 
@@ -17,7 +22,7 @@ function distinctiveWords(words: string[], max = 3): string[] {
     .slice(0, max)
 }
 
-async function searchFilesForTerm(term: string) {
+async function searchFilesForTerm(supabase: SupabaseClient, term: string) {
   const words = normalize(term)
   const keyWords = distinctiveWords(words)
   if (keyWords.length === 0) return []
@@ -50,6 +55,7 @@ type ProcessedResult = {
 }
 
 export async function GET(request: Request) {
+  const supabase = getSupabaseAdmin()
   const { searchParams } = new URL(request.url)
   const offset = parseInt(searchParams.get('offset') || '0')
   const limit = parseInt(searchParams.get('limit') || '20')
@@ -82,7 +88,7 @@ export async function GET(request: Request) {
       const titleWords = normalize(term)
       if (titleWords.length < 2) continue
 
-      const files = await searchFilesForTerm(term)
+      const files = await searchFilesForTerm(supabase, term)
       for (const f of files) {
         const m = scoreMatch(titleWords, f.name, candidates)
         if (m.score > best.score) {
