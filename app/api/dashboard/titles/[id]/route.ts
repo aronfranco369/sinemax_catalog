@@ -15,6 +15,7 @@ type AttachmentJoinRow = {
   episode_number: number | null
   label: string | null
   quality: string | null
+  dj: string | null
   file_id: string | null
   files: { id: string; name: string; path: string; size: number } | null
 }
@@ -27,7 +28,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     supabase.from('titles').select('*').eq('id', id).single(),
     supabase
       .from('attachments')
-      .select('id, season, episode_number, label, quality, file_id, files(id, name, path, size)')
+      .select('id, season, episode_number, label, quality, dj, file_id, files(id, name, path, size)')
       .eq('title_id', id)
       .order('season', { ascending: true, nullsFirst: true })
       .order('episode_number', { ascending: true, nullsFirst: true })
@@ -43,6 +44,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     episode_number: a.episode_number,
     label: a.label,
     quality: a.quality,
+    dj: a.dj,
     drive_id: a.file_id,
     drive_name: a.files?.name ?? null,
     drive_path: a.files?.path ?? null,

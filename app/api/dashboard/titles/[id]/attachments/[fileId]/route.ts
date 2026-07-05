@@ -7,6 +7,7 @@ type PatchBody = {
   episode_number?: number | null
   label?: string | null
   quality?: string | null
+  dj?: string | null
 }
 
 export async function PATCH(
@@ -21,6 +22,7 @@ export async function PATCH(
   if ('season' in body) update.season = body.season
   if ('episode_number' in body) update.episode_number = body.episode_number
   if ('quality' in body) update.quality = body.quality
+  if ('dj' in body) update.dj = body.dj
   if ('label' in body) {
     const label = (body.label || '').trim() || null
     update.label = label

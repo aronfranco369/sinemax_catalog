@@ -41,6 +41,7 @@ export type AttachmentRow = {
   episode_number: number | null
   label: string | null
   quality: string | null
+  dj: string | null
   drive_id: string | null
   drive_name: string | null
   drive_path: string | null
