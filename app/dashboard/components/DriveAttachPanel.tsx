@@ -216,6 +216,7 @@ export default function DriveAttachPanel({
   const [folderResults, setFolderResults] = useState<FolderHit[]>([])
   const [loading, setLoading] = useState(false)
   const [searched, setSearched] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [treeRoot, setTreeRoot] = useState<{ path: string; name: string } | null>(null)
   const [playing, setPlaying] = useState<DriveFileHit | null>(null)
 
@@ -224,17 +225,27 @@ export default function DriveAttachPanel({
     if (q.length < 2) return
     setLoading(true)
     setSearched(true)
+    setError(null)
     setTreeRoot(null)
     try {
-      if (mode === 'folders') {
-        const res = await fetch(`/api/dashboard/drive/folders?q=${encodeURIComponent(q)}&videosOnly=${videosOnly}`)
-        const data = await res.json()
-        setFolderResults(data.data || [])
-      } else {
-        const res = await fetch(`/api/dashboard/drive/files?q=${encodeURIComponent(q)}&videosOnly=${videosOnly}`)
-        const data = await res.json()
-        setFileResults(data.data || [])
+      const url =
+        mode === 'folders'
+          ? `/api/dashboard/drive/folders?q=${encodeURIComponent(q)}&videosOnly=${videosOnly}`
+          : `/api/dashboard/drive/files?q=${encodeURIComponent(q)}&videosOnly=${videosOnly}`
+      const res = await fetch(url)
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        setError(data.error || `Search failed (${res.status})`)
+        if (mode === 'folders') setFolderResults([])
+        else setFileResults([])
+        return
       }
+      if (mode === 'folders') setFolderResults(data.data || [])
+      else setFileResults(data.data || [])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Search failed')
+      if (mode === 'folders') setFolderResults([])
+      else setFileResults([])
     } finally {
       setLoading(false)
     }
@@ -322,11 +333,21 @@ export default function DriveAttachPanel({
           <p className="text-xs text-gray-500 p-2">Enter ≥2 characters and search.</p>
         )}
 
-        {!loading && !treeRoot && searched && mode === 'files' && fileResults.length === 0 && (
+        {!loading && !treeRoot && error && (
+          <div className="text-xs p-2">
+            <p className="text-red-400">Couldn&apos;t search: {error}</p>
+            <button onClick={runSearch} className="text-indigo-400 underline mt-1">
+              Retry
+            </button>
+          </div>
+        )}
+
+        {!loading && !treeRoot && !error && searched && mode === 'files' && fileResults.length === 0 && (
           <p className="text-xs text-gray-500 p-2">No matches</p>
         )}
         {!loading &&
           !treeRoot &&
+          !error &&
           mode === 'files' &&
           fileResults.map((f) => (
             <FileRow
@@ -340,11 +361,12 @@ export default function DriveAttachPanel({
             />
           ))}
 
-        {!loading && !treeRoot && searched && mode === 'folders' && folderResults.length === 0 && (
+        {!loading && !treeRoot && !error && searched && mode === 'folders' && folderResults.length === 0 && (
           <p className="text-xs text-gray-500 p-2">No matching folders</p>
         )}
         {!loading &&
           !treeRoot &&
+          !error &&
           mode === 'folders' &&
           folderResults.map((f) => (
             <FolderRow
