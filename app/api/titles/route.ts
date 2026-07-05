@@ -8,6 +8,17 @@ const supabase = createClient(
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
+  const idParam = searchParams.get('id')
+
+  if (idParam) {
+    const [{ data, error }, { count }] = await Promise.all([
+      supabase.from('titles').select('*').eq('id', idParam).single(),
+      supabase.from('titles').select('*', { count: 'exact', head: true }).eq('status', 'ambiguous'),
+    ])
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ data: data ? [data] : [], count: count || 0 })
+  }
+
   const page = parseInt(searchParams.get('page') || '0')
   const pageSize = 1
   const offset = page * pageSize

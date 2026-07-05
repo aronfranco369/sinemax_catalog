@@ -5,6 +5,7 @@ import Image from 'next/image'
 import EvidenceChip from './components/EvidenceChip'
 import DriveFilesPanel from './components/DriveFilesPanel'
 import PlayerModal from './components/PlayerModal'
+import TitleSearchBar from './components/TitleSearchBar'
 import type { EvidenceResponse, FileEntry } from '@/lib/evidence'
 
 type Candidate = {
@@ -59,6 +60,7 @@ export default function ReviewPage() {
   const [activeFolder, setActiveFolder] = useState<string | null>(null)
   const [playedFileIds, setPlayedFileIds] = useState<Set<string>>(new Set())
   const [player, setPlayer] = useState<{ file: FileEntry; groupFiles: FileEntry[] } | null>(null)
+  const [jumpMode, setJumpMode] = useState(false)
 
   const prefetchCache = useRef<Map<number, PrefetchEntry>>(new Map())
 
@@ -129,15 +131,48 @@ export default function ReviewPage() {
     [applyEvidence, prefetchPage]
   )
 
-  useEffect(() => {
+  const resetTitleUiState = useCallback(() => {
     setPlayedFileIds(new Set())
     setPlayer(null)
     setSearchQuery('')
     setExpandedFolders({})
     setActiveFolder(null)
+  }, [])
+
+  useEffect(() => {
+    resetTitleUiState()
     fetchTitle(page)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page])
+
+  const jumpToTitle = useCallback(
+    async (id: number) => {
+      resetTitleUiState()
+      setJumpMode(true)
+      setLoading(true)
+      setEvidence(null)
+      setEvidenceLoading(true)
+      const res = await fetch(`/api/titles?id=${id}`)
+      const json = await res.json()
+      if (!json.data || json.data.length === 0) {
+        setLoading(false)
+        setJumpMode(false)
+        return
+      }
+      const t = json.data[0]
+      setTitle(t)
+      setTotal(json.count || 0)
+      setLoading(false)
+      fetchEvidence(t.id).then(applyEvidence)
+    },
+    [resetTitleUiState, applyEvidence]
+  )
+
+  const returnToQueue = useCallback(() => {
+    resetTitleUiState()
+    setJumpMode(false)
+    fetchTitle(page)
+  }, [resetTitleUiState, fetchTitle, page])
 
   const runSearch = useCallback(async () => {
     if (!title) return
@@ -180,10 +215,20 @@ export default function ReviewPage() {
       body: JSON.stringify(body),
     })
     setResolving(false)
-    setPage((p) => p + 1)
+    if (jumpMode) {
+      returnToQueue()
+    } else {
+      setPage((p) => p + 1)
+    }
   }
 
-  const skip = () => setPage((p) => p + 1)
+  const skip = () => {
+    if (jumpMode) {
+      returnToQueue()
+    } else {
+      setPage((p) => p + 1)
+    }
+  }
 
   if (done) return (
     <div className="min-h-screen flex items-center justify-center bg-gray-950 text-white">
@@ -205,82 +250,97 @@ export default function ReviewPage() {
   const candidates: Candidate[] = title.candidates_json || []
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white flex flex-col">
-      <div className="px-4 pt-6 pb-3 border-b border-gray-800">
-        <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Sinemax Review</p>
-        <h1 className="text-xl font-bold truncate">{title.raw_title}</h1>
-        {title.original_title && title.original_title !== title.raw_title && (
-          <p className="text-xs text-gray-400 mt-0.5">Original: {title.original_title}</p>
-        )}
+    <div className="h-screen bg-gray-950 text-white flex flex-col overflow-hidden">
+      <div className="px-4 pt-6 pb-3 border-b border-gray-800 flex-shrink-0">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4">
+          <div className="min-w-0">
+            <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">Sinemax Review</p>
+            <h1 className="text-xl font-bold truncate">{title.raw_title}</h1>
+            {title.original_title && title.original_title !== title.raw_title && (
+              <p className="text-xs text-gray-400 mt-0.5">Original: {title.original_title}</p>
+            )}
+          </div>
+          <div className="w-full sm:max-w-xs sm:flex-shrink-0">
+            <TitleSearchBar jumpMode={jumpMode} onSelect={jumpToTitle} onExit={returnToQueue} />
+          </div>
+        </div>
         <div className="flex items-center gap-2 mt-2">
           <span className="text-xs bg-gray-800 px-2 py-0.5 rounded-full">{title.type}</span>
-          <span className="text-xs text-gray-500">{page + 1} of {total} remaining</span>
+          {jumpMode ? (
+            <span className="text-xs text-indigo-400">Search result · {total} ambiguous remaining</span>
+          ) : (
+            <span className="text-xs text-gray-500">{page + 1} of {total} remaining</span>
+          )}
         </div>
       </div>
 
-      <div className="h-1 bg-gray-800">
+      <div className="h-1 bg-gray-800 flex-shrink-0">
         <div
           className="h-1 bg-indigo-500 transition-all"
-          style={{ width: `${Math.min(100, (page / total) * 100)}%` }}
+          style={{ width: jumpMode ? '100%' : `${Math.min(100, (page / total) * 100)}%` }}
         />
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
-        <p className="text-xs text-gray-500 text-center uppercase tracking-widest">Pick the correct match</p>
-        {candidates.map((c, i) => (
-          <button
-            key={i}
-            onClick={() => resolve(c, i)}
-            disabled={resolving}
-            className="w-full text-left bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 active:scale-95 transition-transform disabled:opacity-50"
-          >
-            <div className="flex gap-3 p-3">
-              {c.poster_url ? (
-                <div className="relative w-16 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-gray-800">
-                  <Image src={c.poster_url} alt={c.matched_title} fill className="object-cover" unoptimized />
-                </div>
-              ) : (
-                <div className="w-16 h-24 flex-shrink-0 rounded-lg bg-gray-800 flex items-center justify-center text-gray-600 text-2xl">?</div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-2">
-                  <h2 className="font-semibold text-sm leading-tight">{c.matched_title}</h2>
-                  <span className="text-xs bg-indigo-900 text-indigo-300 px-1.5 py-0.5 rounded flex-shrink-0">{c.year}</span>
-                </div>
-                <div className="flex gap-1 mt-1 flex-wrap items-center">
-                  <span className="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{c.type}</span>
-                  {c.country && <span className="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{c.country}</span>}
-                  <EvidenceChip signals={evidenceLoading ? null : evidence?.signals ?? null} candidateType={c.type} />
-                </div>
-                {c.genres && <p className="text-xs text-indigo-400 mt-1">{c.genres}</p>}
-                {c.synopsis && (
-                  <p className="text-xs text-gray-400 mt-1 line-clamp-3">{c.synopsis}</p>
+      <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden lg:grid lg:grid-cols-2 lg:gap-0">
+        <div className="px-4 py-4 space-y-4 lg:h-full lg:overflow-y-auto lg:border-r lg:border-gray-800">
+          <p className="text-xs text-gray-500 text-center uppercase tracking-widest">Pick the correct match</p>
+          {candidates.map((c, i) => (
+            <button
+              key={i}
+              onClick={() => resolve(c, i)}
+              disabled={resolving}
+              className="w-full text-left bg-gray-900 rounded-2xl overflow-hidden border border-gray-800 active:scale-95 transition-transform disabled:opacity-50"
+            >
+              <div className="flex gap-3 p-3">
+                {c.poster_url ? (
+                  <div className="relative w-16 h-24 flex-shrink-0 rounded-lg overflow-hidden bg-gray-800">
+                    <Image src={c.poster_url} alt={c.matched_title} fill className="object-cover" unoptimized />
+                  </div>
+                ) : (
+                  <div className="w-16 h-24 flex-shrink-0 rounded-lg bg-gray-800 flex items-center justify-center text-gray-600 text-2xl">?</div>
                 )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <h2 className="font-semibold text-sm leading-tight">{c.matched_title}</h2>
+                    <span className="text-xs bg-indigo-900 text-indigo-300 px-1.5 py-0.5 rounded flex-shrink-0">{c.year}</span>
+                  </div>
+                  <div className="flex gap-1 mt-1 flex-wrap items-center">
+                    <span className="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{c.type}</span>
+                    {c.country && <span className="text-xs bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded">{c.country}</span>}
+                    <EvidenceChip signals={evidenceLoading ? null : evidence?.signals ?? null} candidateType={c.type} />
+                  </div>
+                  {c.genres && <p className="text-xs text-indigo-400 mt-1">{c.genres}</p>}
+                  {c.synopsis && (
+                    <p className="text-xs text-gray-400 mt-1 line-clamp-3">{c.synopsis}</p>
+                  )}
+                </div>
               </div>
-            </div>
-          </button>
-        ))}
+            </button>
+          ))}
+        </div>
 
-        <DriveFilesPanel
-          loading={evidenceLoading}
-          error={evidenceError}
-          evidence={evidence}
-          searchQuery={searchQuery}
-          onSearchQueryChange={setSearchQuery}
-          onSearchSubmit={runSearch}
-          onRetry={runSearch}
-          expandedFolders={expandedFolders}
-          onToggleFolder={toggleFolder}
-          onPlay={openPlayer}
-        />
+        <div className="px-4 py-4 lg:h-full lg:overflow-y-auto">
+          <DriveFilesPanel
+            loading={evidenceLoading}
+            error={evidenceError}
+            evidence={evidence}
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+            onSearchSubmit={runSearch}
+            onRetry={runSearch}
+            expandedFolders={expandedFolders}
+            onToggleFolder={toggleFolder}
+            onPlay={openPlayer}
+          />
+        </div>
       </div>
 
-      <div className="px-4 py-4 border-t border-gray-800">
+      <div className="px-4 py-4 border-t border-gray-800 flex-shrink-0">
         <button
           onClick={skip}
           className="w-full py-3 rounded-xl text-sm text-gray-400 border border-gray-700 active:bg-gray-800 transition-colors"
         >
-          Skip for now
+          {jumpMode ? 'Back to queue' : 'Skip for now'}
         </button>
       </div>
 
