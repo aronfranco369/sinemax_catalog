@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { DriveFileHit, FolderHit } from '@/lib/dashboardTypes'
 
 function sizeMb(bytes: number | null | undefined): string {
@@ -219,6 +219,26 @@ export default function DriveAttachPanel({
   const [error, setError] = useState<string | null>(null)
   const [treeRoot, setTreeRoot] = useState<{ path: string; name: string } | null>(null)
   const [playing, setPlaying] = useState<DriveFileHit | null>(null)
+  const [sortBy, setSortBy] = useState<'size' | 'path' | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  const toggleSort = (field: 'size' | 'path') => {
+    if (sortBy === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortBy(field)
+      setSortDir('asc')
+    }
+  }
+
+  const sortedFileResults = useMemo(() => {
+    if (!sortBy) return fileResults
+    const sorted = [...fileResults].sort((a, b) =>
+      sortBy === 'size' ? a.size - b.size : a.path.localeCompare(b.path)
+    )
+    if (sortDir === 'desc') sorted.reverse()
+    return sorted
+  }, [fileResults, sortBy, sortDir])
 
   const runSearch = async () => {
     const q = query.trim()
@@ -292,7 +312,7 @@ export default function DriveAttachPanel({
       </div>
 
       {mode === 'files' && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={attachAllResults}
             disabled={fileResults.length === 0}
@@ -303,6 +323,24 @@ export default function DriveAttachPanel({
           <span className="text-xs text-gray-500">
             {searched ? `${fileResults.length} result(s)` : ''}
           </span>
+          <div className="flex-1" />
+          <span className="text-xs text-gray-600">Sort:</span>
+          <button
+            onClick={() => toggleSort('size')}
+            className={`text-xs px-2 py-1 rounded border ${
+              sortBy === 'size' ? 'border-indigo-500 text-indigo-300' : 'border-gray-700 text-gray-400'
+            }`}
+          >
+            Size {sortBy === 'size' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+          </button>
+          <button
+            onClick={() => toggleSort('path')}
+            className={`text-xs px-2 py-1 rounded border ${
+              sortBy === 'path' ? 'border-indigo-500 text-indigo-300' : 'border-gray-700 text-gray-400'
+            }`}
+          >
+            Path {sortBy === 'path' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+          </button>
         </div>
       )}
 
@@ -349,7 +387,7 @@ export default function DriveAttachPanel({
           !treeRoot &&
           !error &&
           mode === 'files' &&
-          fileResults.map((f) => (
+          sortedFileResults.map((f) => (
             <FileRow
               key={f.id}
               file={f}
