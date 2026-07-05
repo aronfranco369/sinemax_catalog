@@ -6,6 +6,7 @@ import StatsBar, { type Stats } from './components/StatsBar'
 import FiltersBar from './components/FiltersBar'
 import CatalogTable from './components/CatalogTable'
 import TitleEditor from './components/TitleEditor'
+import AddTitleModal from './components/AddTitleModal'
 import TransferScriptDialog, { type ScriptDialogState } from './components/TransferScriptDialog'
 
 const EMPTY_FILTERS: CatalogFilters = { q: '', status: '', tier: '', type: '', catalog: '', sort: '' }
@@ -18,6 +19,7 @@ export default function DashboardPage() {
   const [count, setCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [selectedTitleId, setSelectedTitleId] = useState<number | null>(null)
+  const [addingTitle, setAddingTitle] = useState(false)
   const [scriptDialog, setScriptDialog] = useState<ScriptDialogState | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<CatalogRow | null>(null)
 
@@ -102,7 +104,15 @@ export default function DashboardPage() {
           <span className="text-2xl">🎬</span>
           <h1 className="text-lg font-semibold">Catalog Dashboard</h1>
         </div>
-        <StatsBar stats={stats} />
+        <div className="flex items-center gap-5">
+          <StatsBar stats={stats} />
+          <button
+            onClick={() => setAddingTitle(true)}
+            className="text-xs px-3 py-1.5 rounded-lg bg-indigo-800 whitespace-nowrap"
+          >
+            + Add title
+          </button>
+        </div>
       </div>
 
       <div className="flex items-center gap-3 px-6 pt-4 flex-wrap">
@@ -155,6 +165,17 @@ export default function DashboardPage() {
           onClose={() => setSelectedTitleId(null)}
           onSaved={afterMutation}
           onOpenTitle={setSelectedTitleId}
+        />
+      )}
+
+      {addingTitle && (
+        <AddTitleModal
+          onClose={() => setAddingTitle(false)}
+          onCreated={(id) => {
+            setAddingTitle(false)
+            afterMutation()
+            setSelectedTitleId(id)
+          }}
         />
       )}
 
