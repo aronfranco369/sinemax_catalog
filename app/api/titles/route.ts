@@ -19,17 +19,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ data: data ? [data] : [], count: count || 0 })
   }
 
-  const page = parseInt(searchParams.get('page') || '0')
-  const pageSize = 1
-  const offset = page * pageSize
+  const fromId = parseInt(searchParams.get('from_id') || '0', 10)
 
-  const { data, error, count } = await supabase
-    .from('titles')
-    .select('*', { count: 'exact' })
-    .eq('status', 'ambiguous')
-    .order('id')
-    .range(offset, offset + pageSize - 1)
+  const [{ data, error }, { count }] = await Promise.all([
+    supabase.from('titles').select('*').eq('status', 'ambiguous').gte('id', fromId).order('id').limit(1),
+    supabase.from('titles').select('*', { count: 'exact', head: true }).eq('status', 'ambiguous'),
+  ])
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ data, count })
+  return NextResponse.json({ data, count: count || 0 })
 }

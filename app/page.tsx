@@ -44,9 +44,27 @@ async function fetchEvidence(titleId: number): Promise<EvidenceResponse | null> 
   }
 }
 
+const CURSOR_STORAGE_KEY = 'sinemax-review-cursor-id'
+
+function readStoredCursor(): number {
+  if (typeof window === 'undefined') return 0
+  const raw = window.localStorage.getItem(CURSOR_STORAGE_KEY)
+  const n = raw ? parseInt(raw, 10) : 0
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
+function persistCursor(id: number) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(CURSOR_STORAGE_KEY, String(id))
+  } catch {
+    // best-effort; private-mode/quota failures shouldn't break the review flow
+  }
+}
+
 export default function ReviewPage() {
   const [title, setTitle] = useState<Title | null>(null)
-  const [page, setPage] = useState(0)
+  const [cursorId, setCursorId] = useState<number>(readStoredCursor)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [resolving, setResolving] = useState(false)
@@ -63,6 +81,12 @@ export default function ReviewPage() {
   const [jumpMode, setJumpMode] = useState(false)
 
   const prefetchCache = useRef<Map<number, PrefetchEntry>>(new Map())
+  const initialTotalRef = useRef<number | null>(null)
+
+  const noteTotal = useCallback((count: number) => {
+    if (initialTotalRef.current === null) initialTotalRef.current = count
+    setTotal(count)
+  }, [])
 
   const applyEvidence = useCallback((ev: EvidenceResponse | null) => {
     setEvidence(ev)
@@ -74,18 +98,18 @@ export default function ReviewPage() {
     setActiveFolder(first?.folder ?? null)
   }, [])
 
-  const prefetchPage = useCallback(async (p: number) => {
-    if (prefetchCache.current.has(p)) return
+  const prefetchFrom = useCallback(async (fromId: number) => {
+    if (prefetchCache.current.has(fromId)) return
     try {
-      const res = await fetch(`/api/titles?page=${p}`)
+      const res = await fetch(`/api/titles?from_id=${fromId}`)
       const json = await res.json()
       if (!json.data || json.data.length === 0) {
-        prefetchCache.current.set(p, { title: null, total: json.count || 0, evidence: null })
+        prefetchCache.current.set(fromId, { title: null, total: json.count || 0, evidence: null })
         return
       }
       const t = json.data[0]
       const entry: PrefetchEntry = { title: t, total: json.count || 0, evidence: null }
-      prefetchCache.current.set(p, entry)
+      prefetchCache.current.set(fromId, entry)
       entry.evidence = await fetchEvidence(t.id)
     } catch {
       // best-effort prefetch; a plain fetch will happen on navigation instead
@@ -93,27 +117,28 @@ export default function ReviewPage() {
   }, [])
 
   const fetchTitle = useCallback(
-    async (p: number) => {
-      const cached = prefetchCache.current.get(p)
+    async (fromId: number) => {
+      const cached = prefetchCache.current.get(fromId)
       if (cached) {
-        prefetchCache.current.delete(p)
+        prefetchCache.current.delete(fromId)
         if (!cached.title) {
           setDone(true)
           setLoading(false)
           return
         }
         setTitle(cached.title)
-        setTotal(cached.total)
+        noteTotal(cached.total)
         setLoading(false)
         applyEvidence(cached.evidence)
-        prefetchPage(p + 1)
+        persistCursor(cached.title.id)
+        prefetchFrom(cached.title.id + 1)
         return
       }
 
       setLoading(true)
       setEvidenceLoading(true)
       setEvidence(null)
-      const res = await fetch(`/api/titles?page=${p}`)
+      const res = await fetch(`/api/titles?from_id=${fromId}`)
       const json = await res.json()
       if (!json.data || json.data.length === 0) {
         setDone(true)
@@ -122,13 +147,14 @@ export default function ReviewPage() {
       }
       const t = json.data[0]
       setTitle(t)
-      setTotal(json.count || 0)
+      noteTotal(json.count || 0)
       setLoading(false)
+      persistCursor(t.id)
 
       fetchEvidence(t.id).then(applyEvidence)
-      prefetchPage(p + 1)
+      prefetchFrom(t.id + 1)
     },
-    [applyEvidence, prefetchPage]
+    [applyEvidence, prefetchFrom, noteTotal]
   )
 
   const resetTitleUiState = useCallback(() => {
@@ -141,9 +167,9 @@ export default function ReviewPage() {
 
   useEffect(() => {
     resetTitleUiState()
-    fetchTitle(page)
+    fetchTitle(cursorId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page])
+  }, [cursorId])
 
   const jumpToTitle = useCallback(
     async (id: number) => {
@@ -161,18 +187,18 @@ export default function ReviewPage() {
       }
       const t = json.data[0]
       setTitle(t)
-      setTotal(json.count || 0)
+      noteTotal(json.count || 0)
       setLoading(false)
       fetchEvidence(t.id).then(applyEvidence)
     },
-    [resetTitleUiState, applyEvidence]
+    [resetTitleUiState, applyEvidence, noteTotal]
   )
 
   const returnToQueue = useCallback(() => {
     resetTitleUiState()
     setJumpMode(false)
-    fetchTitle(page)
-  }, [resetTitleUiState, fetchTitle, page])
+    fetchTitle(cursorId)
+  }, [resetTitleUiState, fetchTitle, cursorId])
 
   const runSearch = useCallback(async () => {
     if (!title) return
@@ -218,15 +244,15 @@ export default function ReviewPage() {
     if (jumpMode) {
       returnToQueue()
     } else {
-      setPage((p) => p + 1)
+      setCursorId(title.id + 1)
     }
   }
 
   const skip = () => {
     if (jumpMode) {
       returnToQueue()
-    } else {
-      setPage((p) => p + 1)
+    } else if (title) {
+      setCursorId(title.id + 1)
     }
   }
 
@@ -248,6 +274,8 @@ export default function ReviewPage() {
   if (!title) return null
 
   const candidates: Candidate[] = title.candidates_json || []
+  const initialTotal = initialTotalRef.current
+  const progressPercent = initialTotal ? Math.min(100, ((initialTotal - total) / initialTotal) * 100) : 0
 
   return (
     <div className="h-screen bg-gray-950 text-white flex flex-col overflow-hidden">
@@ -267,9 +295,9 @@ export default function ReviewPage() {
         <div className="flex items-center gap-2 mt-2">
           <span className="text-xs bg-gray-800 px-2 py-0.5 rounded-full">{title.type}</span>
           {jumpMode ? (
-            <span className="text-xs text-indigo-400">Search result · {total} ambiguous remaining</span>
+            <span className="text-xs text-indigo-400">Search result · {total} remaining</span>
           ) : (
-            <span className="text-xs text-gray-500">{page + 1} of {total} remaining</span>
+            <span className="text-xs text-gray-500">{total} remaining</span>
           )}
         </div>
       </div>
@@ -277,7 +305,7 @@ export default function ReviewPage() {
       <div className="h-1 bg-gray-800 flex-shrink-0">
         <div
           className="h-1 bg-indigo-500 transition-all"
-          style={{ width: jumpMode ? '100%' : `${Math.min(100, (page / total) * 100)}%` }}
+          style={{ width: `${progressPercent}%` }}
         />
       </div>
 
