@@ -94,11 +94,22 @@ export default function AttachedFilesList({
 
       <div className="max-h-[62vh] overflow-y-auto flex flex-col gap-2">
         {attachments.length === 0 && <p className="text-xs text-gray-500">No files attached yet</p>}
-        {attachments.map((a, idx) => (
+        {attachments.map((a, idx) => {
+          const quality = a.quality || 'SD'
+          return (
           <div key={a.id} className="bg-gray-900 border border-gray-800 rounded-xl p-2.5">
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-gray-600">{idx + 1}.</span>
               <span className="font-semibold text-xs break-all flex-1">{a.drive_name}</span>
+              <button
+                onClick={() => a.drive_id && patch(a.drive_id, { quality: quality === 'HD' ? 'SD' : 'HD' })}
+                title="Toggle SD/HD — same episode, alternate quality cut"
+                className={`text-[10px] px-1.5 py-0.5 rounded border flex-shrink-0 ${
+                  quality === 'HD' ? 'border-emerald-600 text-emerald-400' : 'border-gray-700 text-gray-400'
+                }`}
+              >
+                {quality}
+              </button>
               <span className="text-[11px] text-gray-500 flex-shrink-0">{sizeMb(a.file_size)}</span>
             </div>
             <div className="flex items-center gap-3 mt-1">
@@ -148,7 +159,8 @@ export default function AttachedFilesList({
               />
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
