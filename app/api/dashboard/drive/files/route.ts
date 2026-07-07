@@ -8,6 +8,10 @@ type RpcRow = { id: string; name: string; parent_id: string | null; path: string
 // must appear somewhere in the file name OR its folder path. Uses the
 // search_files_multi RPC (fully parameterized) rather than building
 // PostgREST .or() filter strings out of raw user input.
+// Tokens under 3 chars are matched at word starts only ("ip" matches
+// "Ip Man" but not "flip") — substring ILIKE on a 2-char token can't use
+// the trigram indexes and blew the 3s statement timeout; see
+// docs/sql/2026-07-07_fix_drive_search_statement_timeout.sql.
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const q = (searchParams.get('q') || '').trim()
