@@ -3,14 +3,15 @@ import { supabaseServer } from '@/lib/supabaseServer'
 
 export async function GET() {
   const supabase = supabaseServer()
-  const [totalRes, statusRes, readyRes, attRes] = await Promise.all([
+  const [totalRes, statusRes, readyRes, publishedRes, attRes] = await Promise.all([
     supabase.from('titles').select('*', { count: 'exact', head: true }),
     supabase.from('titles').select('status'),
     supabase.from('titles').select('*', { count: 'exact', head: true }).eq('catalog_status', 'ready'),
+    supabase.from('titles').select('*', { count: 'exact', head: true }).eq('catalog_status', 'published'),
     supabase.from('attachments').select('title_id'),
   ])
 
-  const err = totalRes.error || statusRes.error || readyRes.error || attRes.error
+  const err = totalRes.error || statusRes.error || readyRes.error || publishedRes.error || attRes.error
   if (err) return NextResponse.json({ error: err.message }, { status: 500 })
 
   const byStatus: Record<string, number> = {}
@@ -24,6 +25,7 @@ export async function GET() {
     total: totalRes.count || 0,
     by_status: byStatus,
     ready: readyRes.count || 0,
+    published: publishedRes.count || 0,
     attached: attachedTitles.size,
   })
 }

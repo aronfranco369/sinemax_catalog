@@ -9,7 +9,7 @@ function Chip({ value, label, color = 'text-white' }: { value: number; label: st
   )
 }
 
-export type Stats = { total: number; by_status: Record<string, number>; ready: number; attached: number }
+export type Stats = { total: number; by_status: Record<string, number>; ready: number; published: number; attached: number }
 
 export default function StatsBar({ stats }: { stats: Stats | null }) {
   if (!stats) return <div className="h-10" />
@@ -20,6 +20,7 @@ export default function StatsBar({ stats }: { stats: Stats | null }) {
       <Chip value={stats.by_status.ambiguous || 0} label="ambiguous" color="text-red-400" />
       <Chip value={stats.attached} label="with files" color="text-blue-400" />
       <Chip value={stats.ready} label="ready" color="text-green-400" />
+      <Chip value={stats.published} label="published" color="text-indigo-400" />
     </div>
   )
 }

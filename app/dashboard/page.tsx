@@ -13,7 +13,9 @@ const EMPTY_FILTERS: CatalogFilters = { q: '', status: '', tier: '', type: '', c
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null)
-  const [view, setView] = useState<'curate' | 'ready'>('curate')
+  const [view, setView] = useState<'curate' | 'ready' | 'published'>('curate')
+  const [publishing, setPublishing] = useState<number | null>(null)
+  const [publishMsg, setPublishMsg] = useState<string | null>(null)
   const [filters, setFilters] = useState<CatalogFilters>(EMPTY_FILTERS)
   const [rows, setRows] = useState<CatalogRow[]>([])
   const [count, setCount] = useState(0)
@@ -36,7 +38,8 @@ export default function DashboardPage() {
     if (filters.tier) params.set('tier', filters.tier)
     if (filters.type) params.set('type', filters.type)
     if (filters.sort) params.set('sort', filters.sort)
-    params.set('catalog', view === 'ready' ? 'ready' : 'not_ready')
+    const catalog = view === 'ready' ? 'ready' : view === 'published' ? 'published' : 'not_ready'
+    params.set('catalog', catalog)
     const res = await fetch(`/api/dashboard/titles?${params}`)
     const data = await res.json()
     setRows(data.rows || [])
@@ -67,6 +70,27 @@ export default function DashboardPage() {
     })
     const data = await res.json()
     setScriptDialog({ title: `Transfer script — ${row.matched_title || row.raw_title}`, script: data.script, total: data.total })
+  }
+
+  const publishRow = async (row: CatalogRow) => {
+    setPublishing(row.id)
+    setPublishMsg(null)
+    try {
+      const res = await fetch(`/api/dashboard/titles/${row.id}/publish`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) {
+        setPublishMsg(`⚠ ${data.error || 'publish failed'}`)
+      } else {
+        setPublishMsg(
+          `✓ Published "${row.matched_title || row.raw_title}" — ${data.media_count} media, ${data.file_count} files`
+        )
+        afterMutation()
+      }
+    } catch (e) {
+      setPublishMsg(`⚠ ${e instanceof Error ? e.message : 'publish failed'}`)
+    } finally {
+      setPublishing(null)
+    }
   }
 
   const copyAllReady = async () => {
@@ -129,6 +153,12 @@ export default function DashboardPage() {
           >
             ✓ Ready {stats ? `(${stats.ready})` : ''}
           </button>
+          <button
+            onClick={() => setView('published')}
+            className={`px-3 py-1.5 ${view === 'published' ? 'bg-indigo-800 text-white' : 'text-gray-400'}`}
+          >
+            📤 Published {stats ? `(${stats.published})` : ''}
+          </button>
         </div>
         {view === 'ready' && (
           <div className="flex items-center gap-2">
@@ -139,6 +169,17 @@ export default function DashboardPage() {
               ⌨ Cloud Shell setup
             </button>
           </div>
+        )}
+        {publishMsg && (
+          <span
+            className={`text-xs px-3 py-1.5 rounded-lg border ${
+              publishMsg.startsWith('✓')
+                ? 'border-indigo-700 text-indigo-300'
+                : 'border-orange-700 text-orange-300'
+            }`}
+          >
+            {publishMsg}
+          </span>
         )}
       </div>
 
@@ -153,8 +194,10 @@ export default function DashboardPage() {
         <CatalogTable
           rows={rows}
           loading={loading}
+          publishingId={publishing}
           onRowClick={setSelectedTitleId}
           onCopyRow={copyRow}
+          onPublishRow={publishRow}
           onDeleteRow={setDeleteTarget}
         />
       </div>
