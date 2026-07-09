@@ -53,6 +53,7 @@ export default function TitleEditor({
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [translating, setTranslating] = useState(false)
+  const [translateError, setTranslateError] = useState<string | null>(null)
   const [trailerOpen, setTrailerOpen] = useState(false)
   const [trailerLoading, setTrailerLoading] = useState(false)
   const [trailerUrl, setTrailerUrl] = useState<string | null>(null)
@@ -124,14 +125,24 @@ export default function TitleEditor({
   const translate = async () => {
     if (!fields || !fields.synopsis.trim()) return
     setTranslating(true)
-    const res = await fetch('/api/dashboard/translate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: fields.synopsis }),
-    })
-    const data = await res.json()
-    setTranslating(false)
-    if (data.result) setField('synopsis_sw', data.result)
+    setTranslateError(null)
+    try {
+      const res = await fetch('/api/dashboard/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: fields.synopsis }),
+      })
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        setTranslateError(data.error || `Translation failed (${res.status})`)
+        return
+      }
+      if (data.result) setField('synopsis_sw', data.result)
+    } catch (e) {
+      setTranslateError(e instanceof Error ? e.message : 'Translation failed')
+    } finally {
+      setTranslating(false)
+    }
   }
 
   const toggleTrailer = async () => {
@@ -247,6 +258,9 @@ export default function TitleEditor({
                   {translating ? 'Translating…' : 'Translate'}
                 </button>
               </div>
+              {translateError && (
+                <p className="text-[11px] text-red-400 mb-1">Couldn&apos;t translate: {translateError}</p>
+              )}
               <textarea
                 className={`${inputCls} min-h-[64px]`}
                 value={fields.synopsis_sw}
