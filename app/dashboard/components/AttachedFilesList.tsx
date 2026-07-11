@@ -2,13 +2,19 @@
 
 import { useMemo, useState } from 'react'
 import type { AttachmentRow } from '@/lib/dashboardTypes'
+import { extractPart } from '@/lib/episodeParse'
 
 function sizeMb(bytes: number | null): string {
   return bytes ? `${Math.round(bytes / 1048576)} MB` : ''
 }
 
+// Files only count as variants of each other when they share season AND
+// episode number AND part. A "Part A"/"Part B" split shares the episode
+// number but is a different segment, not an alternate cut, so the part keeps
+// them in separate groups.
 function groupKey(a: AttachmentRow): string {
-  return `${a.season ?? ''}-${a.episode_number ?? ''}`
+  const part = extractPart(a.label) ?? extractPart(a.drive_name)
+  return `${a.season ?? ''}-${a.episode_number ?? ''}-${part ?? ''}`
 }
 
 export default function AttachedFilesList({

@@ -25,6 +25,21 @@ export function extractEpisodeNumber(name: string | null | undefined): number | 
 }
 
 /**
+ * Part marker guessed from a filename/label, e.g. 'Episode 8 Part A' -> 'A',
+ * 'Ep 8 Pt2' -> '2' (else null). Normalised to upper-case.
+ *
+ * A single episode split across sequential files ("Part A", "Part B") shares
+ * one episode number but is NOT an alternate cut of the same content, so the
+ * part marker keeps those files from being mistaken for DJ/quality variants.
+ */
+export function extractPart(name: string | null | undefined): string | null {
+  if (!name) return null
+  const base = name.toLowerCase().replace(/\.[a-z0-9]{2,4}$/, '')
+  const m = base.match(/\bp(?:ar)?t[ ._-]*([a-d]|\d{1,2})\b/)
+  return m ? m[1].toUpperCase() : null
+}
+
+/**
  * Episode number embedded in a label like 'Episode 5' -> 5 (else null).
  *
  * The label is the authoritative ordering key for a series: episodes are

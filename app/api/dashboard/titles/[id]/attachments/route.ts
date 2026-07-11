@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabaseServer'
-import { extractEpisodeNumber } from '@/lib/episodeParse'
+import { extractEpisodeNumber, extractPart } from '@/lib/episodeParse'
 
 type AttachBody = {
   files: { file_id: string; name: string }[]
@@ -44,13 +44,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     let label: string
     if (isSeries) {
       const ext = extractEpisodeNumber(f.name)
+      const part = extractPart(f.name)
+      const partSuffix = part ? ` Part ${part}` : ''
       if (ext == null) {
         episodeNumber = fallback
-        label = `Episode ${fallback}`
+        label = `Episode ${fallback}${partSuffix}`
         fallback += 1
       } else {
         episodeNumber = ext
-        label = `Episode ${ext}`
+        label = `Episode ${ext}${partSuffix}`
       }
     } else {
       episodeNumber = fallback
