@@ -26,6 +26,7 @@ export default function AttachedFilesList({
 }) {
   const [seasonInput, setSeasonInput] = useState<string>('')
   const [playingId, setPlayingId] = useState<number | null>(null)
+  const [detachingAll, setDetachingAll] = useState(false)
 
   // How many attachments share the same (season, episode_number) slot --
   // that's what actually makes a row "a variant of something", regardless
@@ -57,6 +58,18 @@ export default function AttachedFilesList({
   const detach = async (fileId: string) => {
     await fetch(`/api/dashboard/titles/${titleId}/attachments/${encodeURIComponent(fileId)}`, { method: 'DELETE' })
     await onRefresh()
+  }
+
+  const detachAll = async () => {
+    if (attachments.length === 0) return
+    if (!confirm(`Detach all ${attachments.length} file(s)? This starts the attachments fresh.`)) return
+    setDetachingAll(true)
+    try {
+      await fetch(`/api/dashboard/titles/${titleId}/attachments`, { method: 'DELETE' })
+      await onRefresh()
+    } finally {
+      setDetachingAll(false)
+    }
   }
 
   const patch = async (fileId: string, body: Record<string, unknown>) => {
@@ -101,9 +114,16 @@ export default function AttachedFilesList({
         </div>
       )}
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <button onClick={renumber} className="text-xs px-2 py-1 rounded border border-gray-700">
           🔢 Renumber 1…N
+        </button>
+        <button
+          onClick={detachAll}
+          disabled={detachingAll || attachments.length === 0}
+          className="text-xs px-2 py-1 rounded border border-red-800 text-red-400 disabled:opacity-40"
+        >
+          {detachingAll ? 'Detaching…' : '🗑 Detach all'}
         </button>
         <span className="text-xs text-gray-500">{attachments.length} attached</span>
       </div>

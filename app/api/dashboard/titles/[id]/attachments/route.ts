@@ -73,3 +73,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ attached: data?.length ?? 0 })
 }
+
+// Detach every file from a title at once, so the attachments can be built up
+// from scratch without removing them one by one.
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const supabase = supabaseServer()
+  const { error } = await supabase.from('attachments').delete().eq('title_id', id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ success: true })
+}
