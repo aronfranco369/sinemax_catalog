@@ -96,8 +96,9 @@ export default function TitleEditor({
     setSaving(false)
     onSaved()
     if (markReady) {
-      // Reload so the "Add variant" action (only offered once ready) appears.
-      await load()
+      // Marking ready is a "done with this title" action — close the editor
+      // and return to the catalog. Re-open the title later to add a variant.
+      onClose()
     } else {
       setM((prev) => (prev ? { ...prev, ...fields } : prev))
     }

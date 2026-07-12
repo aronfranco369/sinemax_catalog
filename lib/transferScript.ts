@@ -9,6 +9,9 @@
 const DRIVE_ROOT_ID = '11xi35nvqUqAHs4t911diIF0VZOZULlzd'
 const SINEMAX_PREFIX = 'sinemax'
 
+// Public download host for the B2 bucket (files served straight to the app).
+const B2_DOWNLOAD_HOST = 'https://f003.backblazeb2.com/file'
+
 const ILLEGAL_SEG = /[\\/\x00-\x1f\x7f]/g
 
 /** Sanitise one B2 key path segment (a folder or file name). */
@@ -18,19 +21,18 @@ function b2Seg(s: string | null | undefined): string {
   return out || 'untitled'
 }
 
-/**
- * 'DJ <name>' tag for a folder segment, or '' when no DJ is set.
- *
- * Auto-prepends 'DJ ' if the value doesn't already start with it, so 'Macky'
- * and 'DJ Macky' both render as 'DJ Macky'. This tag is what keeps two
- * variants of the same title (same title+year, different DJ) in separate B2
- * folders instead of overwriting each other.
- */
-function djTag(dj: string | null | undefined): string {
-  const trimmed = (dj || '').trim()
-  if (!trimmed) return ''
-  const seg = b2Seg(trimmed)
-  return /^dj\b/i.test(seg) ? seg : `DJ ${seg}`
+/** Lowercase, hyphen-joined slug for an in-filename tag (dj / quality). */
+function slug(s: string | null | undefined): string {
+  return (s || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+/** Lower-case file extension from a drive filename, e.g. 'mp4'. Empty if none. */
+function fileExt(name: string | null | undefined): string {
+  const m = /\.([a-z0-9]{2,5})$/i.exec((name || '').trim())
+  return m ? m[1].toLowerCase() : ''
 }
 
 export type TransferTitle = {
@@ -42,33 +44,80 @@ export type TransferTitle = {
   dj: string | null
 }
 
-/**
- * Folder name for a title's media: 'Title (Year) - DJ Name'.
- *
- * Year and the DJ tag are both optional:
- *   'Knights (2025) - DJ Macky'  (full)
- *   'Knights (2025)'             (no DJ)
- *   'Knights - DJ Macky'         (no year)
- */
-export function mediaFolder(t: TransferTitle): string {
-  const title = b2Seg(t.matched_title || t.raw_title)
-  const year = String(t.year || '').trim()
-  const base = year ? `${title} (${year})` : title
-  const dj = djTag(t.dj)
-  return dj ? `${base} - ${dj}` : base
-}
-
 export type TransferAttachment = {
   id: number
   drive_name: string | null
   drive_path: string | null
+  season?: number | null
+  episode_number?: number | null
+  quality?: string | null
+  dj?: string | null
 }
 
-/** Deterministic B2 key for one attached video file. */
+/** True when the title is episodic (series/tv) rather than a movie. */
+export function isSeriesType(t: TransferTitle): boolean {
+  return t.type === 'series' || t.type === 'tv'
+}
+
+/**
+ * The DJ that actually applies to one file: the attachment's own DJ tag when
+ * present (a one-off guest cut), otherwise the title's DJ. May be ''.
+ */
+export function effectiveDj(t: TransferTitle, a: TransferAttachment): string {
+  return (a.dj || '').trim() || (t.dj || '').trim()
+}
+
+/**
+ * Folder name for a title's media: just 'Title (Year)' — no DJ.
+ *
+ * Every DJ / quality variant of the same work shares this one folder; the
+ * files inside are kept distinct by their object key (see videoObjectKey),
+ * not by living in separate folders.
+ *   'Knights (2025)'   (with year)
+ *   'Knights'          (no year)
+ */
+export function mediaFolder(t: TransferTitle): string {
+  const title = b2Seg(t.matched_title || t.raw_title)
+  const year = String(t.year || '').trim()
+  return year ? `${title} (${year})` : title
+}
+
+/** Zero-padded slot label: 's01e05' for series, 'part1' for movies. */
+function slotName(t: TransferAttachment, series: boolean): string {
+  const ep = t.episode_number ?? 1
+  if (series) {
+    const s = String(t.season ?? 1).padStart(2, '0')
+    return `s${s}e${String(ep).padStart(2, '0')}`
+  }
+  return `part${ep}`
+}
+
+/**
+ * Deterministic, collision-proof B2 key for one attached video file:
+ *   sinemax/{movies|series}/{Title (Year)}/{slot}[-{dj}][-{quality}]-{id}.{ext}
+ *
+ * The trailing attachment id is what guarantees uniqueness — the dj/quality
+ * tags are only there so the file is legible in the B2 console. Because the
+ * key is anchored on the immutable attachment id, it stays stable even if the
+ * title text, dj, or original drive filename are later edited.
+ */
 export function videoObjectKey(t: TransferTitle, a: TransferAttachment): string {
-  const kind = t.type === 'series' || t.type === 'tv' ? 'series' : 'movies'
-  const fname = b2Seg(a.drive_name || `${a.id}.bin`)
+  const kind = isSeriesType(t) ? 'series' : 'movies'
+  const parts = [slotName(a, isSeriesType(t))]
+  const dj = slug(effectiveDj(t, a))
+  if (dj) parts.push(dj)
+  const q = slug(a.quality)
+  if (q) parts.push(q)
+  parts.push(String(a.id))
+  const ext = fileExt(a.drive_name)
+  const fname = parts.join('-') + (ext ? `.${ext}` : '')
   return `${SINEMAX_PREFIX}/${kind}/${mediaFolder(t)}/${fname}`
+}
+
+/** Public https URL the app streams from, for a given object key. */
+export function b2DownloadUrl(key: string, bucket = 'suacart'): string {
+  const encoded = key.split('/').map(encodeURIComponent).join('/')
+  return `${B2_DOWNLOAD_HOST}/${bucket}/${encoded}`
 }
 
 /** POSIX shell single-quoting, equivalent to Python's shlex.quote. */

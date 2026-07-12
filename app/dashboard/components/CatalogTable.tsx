@@ -16,14 +16,18 @@ const PAGE_SIZE = 25
 export default function CatalogTable({
   rows,
   loading,
+  publishingId,
   onRowClick,
   onCopyRow,
+  onPublishRow,
   onDeleteRow,
 }: {
   rows: CatalogRow[]
   loading: boolean
+  publishingId: number | null
   onRowClick: (id: number) => void
   onCopyRow: (row: CatalogRow) => void
+  onPublishRow: (row: CatalogRow) => void
   onDeleteRow: (row: CatalogRow) => void
 }) {
   const [page, setPage] = useState(1)
@@ -108,7 +112,9 @@ export default function CatalogTable({
                     </td>
                     <td className="p-2 text-gray-500">{(r.uploaded || '').slice(0, 10)}</td>
                     <td className="p-2">
-                      {r.catalog_status === 'ready' ? (
+                      {r.catalog_status === 'published' ? (
+                        <span className="text-indigo-400 font-semibold">📤 published</span>
+                      ) : r.catalog_status === 'ready' ? (
                         <span className="text-green-400 font-semibold">✓ ready</span>
                       ) : (
                         <span className="text-gray-600">—</span>
@@ -116,6 +122,23 @@ export default function CatalogTable({
                     </td>
                     <td className="p-2">
                       <div className="flex items-center gap-1 justify-end">
+                        {(r.catalog_status === 'ready' || r.catalog_status === 'published') && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onPublishRow(r)
+                            }}
+                            disabled={publishingId === r.id}
+                            title={
+                              r.catalog_status === 'published'
+                                ? 'Re-publish to the app (replaces existing media/files)'
+                                : 'Publish this title to the app'
+                            }
+                            className="p-1 rounded hover:bg-gray-800 text-indigo-400 disabled:opacity-40"
+                          >
+                            {publishingId === r.id ? '…' : '📤'}
+                          </button>
+                        )}
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
