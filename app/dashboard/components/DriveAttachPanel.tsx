@@ -1,8 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import type { AiGroupItem, DriveFileHit, FolderHit } from '@/lib/dashboardTypes'
-import AiAutomateOverlay from './AiAutomateOverlay'
+import type { DriveFileHit, FolderHit } from '@/lib/dashboardTypes'
 
 function sizeMb(bytes: number | null | undefined): string {
   return bytes ? `${Math.round(bytes / 1048576)} MB` : ''
@@ -204,19 +203,12 @@ function FolderTreeNode({
 export default function DriveAttachPanel({
   attachedIds,
   defaultQuery,
-  isSeries,
-  titleName,
   onAttach,
-  onAiApply,
 }: {
   attachedIds: Set<string>
   defaultQuery: string
-  isSeries?: boolean
-  titleName?: string
   onAttach: (files: { id: string; name: string }[]) => Promise<void>
-  onAiApply?: (items: AiGroupItem[], replace: boolean) => Promise<void>
 }) {
-  const [aiOpen, setAiOpen] = useState(false)
   const [mode, setMode] = useState<'files' | 'folders'>('files')
   const [videosOnly, setVideosOnly] = useState(true)
   const [query, setQuery] = useState(defaultQuery)
@@ -331,16 +323,6 @@ export default function DriveAttachPanel({
           <span className="text-xs text-gray-500">
             {searched ? `${fileResults.length} result(s)` : ''}
           </span>
-          {onAiApply && (
-            <button
-              onClick={() => setAiOpen(true)}
-              disabled={fileResults.length === 0}
-              title="Let AI parse these results and propose a standardized episode/quality/DJ grouping"
-              className="text-xs px-3 py-1.5 rounded-lg border border-indigo-600 text-indigo-300 disabled:opacity-40"
-            >
-              🤖 AI automate
-            </button>
-          )}
           <div className="flex-1" />
           <span className="text-xs text-gray-600">Sort:</span>
           <button
@@ -439,16 +421,6 @@ export default function DriveAttachPanel({
             />
           ))}
       </div>
-
-      {aiOpen && onAiApply && (
-        <AiAutomateOverlay
-          files={fileResults}
-          isSeries={!!isSeries}
-          titleName={titleName || ''}
-          onApply={onAiApply}
-          onClose={() => setAiOpen(false)}
-        />
-      )}
     </div>
   )
 }
