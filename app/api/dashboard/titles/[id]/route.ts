@@ -7,6 +7,7 @@ import type { AttachmentRow } from '@/lib/dashboardTypes'
 const EDITABLE = [
   'matched_title', 'type', 'year', 'country', 'genres',
   'synopsis', 'synopsis_sw', 'dj', 'tags', 'catalog_status', 'poster_url',
+  'review_notes',
 ] as const
 
 type AttachmentJoinRow = {

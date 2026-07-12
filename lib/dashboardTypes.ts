@@ -32,6 +32,7 @@ export type Title = {
   tags: string | null
   removed_text: string | null
   catalog_status: string | null
+  review_notes: string | null
   updated_at: string | null
 }
 

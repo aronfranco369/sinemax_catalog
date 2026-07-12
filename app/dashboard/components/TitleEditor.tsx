@@ -169,6 +169,15 @@ export default function TitleEditor({
     await refreshAttachments()
   }
 
+  const dismissNotes = async () => {
+    setM((prev) => (prev ? { ...prev, review_notes: null } : prev))
+    await fetch(`/api/dashboard/titles/${titleId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ review_notes: null }),
+    })
+  }
+
   const aiApply = async (items: AiGroupItem[], replace: boolean) => {
     await fetch(`/api/dashboard/titles/${titleId}/attachments/ai-apply`, {
       method: 'POST',
@@ -210,6 +219,19 @@ export default function TitleEditor({
             ✕
           </button>
         </div>
+
+        {m.review_notes && (
+          <div className="mb-4 rounded-xl border border-amber-700/60 bg-amber-950/30 p-3">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs font-semibold text-amber-300">🤖 AI review notes — check before publishing</span>
+              <div className="flex-1" />
+              <button onClick={dismissNotes} className="text-[11px] px-2 py-0.5 rounded border border-amber-700/60 text-amber-300/80">
+                Dismiss
+              </button>
+            </div>
+            <p className="text-xs text-amber-100/90 whitespace-pre-wrap leading-relaxed">{m.review_notes}</p>
+          </div>
+        )}
 
         <div className="flex gap-5 flex-col sm:flex-row">
           {/* eslint-disable-next-line @next/next/no-img-element */}
