@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabaseServer'
 import type { AttachmentRow } from '@/lib/dashboardTypes'
+import { validateForPublish, type ValTitle } from '@/lib/validateTitle'
 
 // Fields a curator may edit from the title editor. Mirrors catalog.py's
 // EDITABLE list; anything else in the request body is ignored server-side.
@@ -71,6 +72,29 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   update.updated_at = new Date().toISOString()
 
   const supabase = supabaseServer()
+
+  // Marking a title ready must pass the same detail checks as publishing, so a
+  // title can never enter the ready catalog missing a Swahili description, DJ,
+  // or a valid country.
+  if (update.catalog_status === 'ready') {
+    const [{ data: current }, { data: atts }] = await Promise.all([
+      supabase.from('titles').select('type, country, synopsis_sw, dj, matched_title, raw_title').eq('id', id).single(),
+      supabase.from('attachments').select('episode_number, dj').eq('title_id', id),
+    ])
+    const merged: ValTitle = {
+      type: (('type' in update ? update.type : current?.type) as string | null) ?? null,
+      country: (('country' in update ? update.country : current?.country) as string | null) ?? null,
+      synopsis_sw: (('synopsis_sw' in update ? update.synopsis_sw : current?.synopsis_sw) as string | null) ?? null,
+      dj: (('dj' in update ? update.dj : current?.dj) as string | null) ?? null,
+      matched_title: (('matched_title' in update ? update.matched_title : current?.matched_title) as string | null) ?? null,
+      raw_title: current?.raw_title ?? null,
+    }
+    const problems = validateForPublish(merged, (atts || []) as { episode_number: number | null; dj: string | null }[])
+    if (problems.length) {
+      return NextResponse.json({ error: `Missing details: ${problems.join(' ')}` }, { status: 400 })
+    }
+  }
+
   const { error } = await supabase.from('titles').update(update).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })

@@ -10,6 +10,7 @@ import {
   type TransferTitle,
   type TransferAttachment,
 } from '@/lib/transferScript'
+import { validateForPublish } from '@/lib/validateTitle'
 
 type AttRow = {
   id: number
@@ -87,23 +88,54 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   const displayTitle = (title.matched_title || title.raw_title || '').trim()
   const yearNum = Number.parseInt(String(title.year || ''), 10)
 
-  // Group attachments by effective DJ (case-insensitive), preserving order.
-  const groups = new Map<string, { dj: string; atts: AttRow[] }>()
-  for (const a of attachments) {
-    const ta: TransferAttachment = {
-      id: a.id,
-      drive_name: a.files?.name ?? null,
-      drive_path: a.files?.path ?? null,
-      season: a.season,
-      episode_number: a.episode_number,
-      quality: a.quality,
-      dj: a.dj,
+  // Gate: all publishable details must be present (same rules the editor shows).
+  const problems = validateForPublish(
+    {
+      type: title.type,
+      country: title.country,
+      synopsis_sw: title.synopsis_sw,
+      dj: title.dj,
+      matched_title: title.matched_title,
+      raw_title: title.raw_title,
+    },
+    attachments.map((a) => ({ episode_number: a.episode_number, dj: a.dj }))
+  )
+  if (problems.length) {
+    return NextResponse.json({ error: `Missing details: ${problems.join(' ')}` }, { status: 400 })
+  }
+
+  // Split the attachments into media rows, preserving order:
+  //   - Series: one media carrying the title's DJ; its files are the episodes.
+  //   - Movie:  one media per variant number; its files are that variant's parts
+  //             (a shared number that repeats = the same movie split into parts).
+  const groups: { dj: string; atts: AttRow[] }[] = []
+  if (series) {
+    groups.push({ dj: (title.dj || '').trim(), atts: attachments })
+  } else {
+    const byNumber = new Map<number, AttRow[]>()
+    const order: number[] = []
+    for (const a of attachments) {
+      const n = a.episode_number ?? 0
+      if (!byNumber.has(n)) {
+        byNumber.set(n, [])
+        order.push(n)
+      }
+      byNumber.get(n)!.push(a)
     }
-    const dj = effectiveDj(tTitle, ta)
-    const key = dj.toLowerCase()
-    const g = groups.get(key)
-    if (g) g.atts.push(a)
-    else groups.set(key, { dj, atts: [a] })
+    for (const n of order) {
+      const atts = byNumber.get(n)!
+      const lead = atts[0]
+      const ta: TransferAttachment = {
+        id: lead.id,
+        drive_name: lead.files?.name ?? null,
+        drive_path: lead.files?.path ?? null,
+        season: lead.season,
+        episode_number: lead.episode_number,
+        quality: lead.quality,
+        dj: lead.dj,
+      }
+      groups.push({ dj: effectiveDj(tTitle, ta), atts })
+    }
   }
 
   // Persist any missing B2 keys back onto the attachments (immutable once set).
@@ -133,7 +165,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   const publishedMediaIds: string[] = []
 
-  for (const { dj, atts: groupAtts } of groups.values()) {
+  for (const { dj, atts: groupAtts } of groups) {
     const mediaId = randomUUID()
     const mediaRow = {
       id: mediaId,
@@ -154,7 +186,10 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
     const multiPart = groupAtts.length > 1
     const fileRows = groupAtts.map((a, idx) => {
-      const ep = a.episode_number ?? idx + 1
+      // Series files keep their real episode number; a movie variant's files are
+      // its parts, numbered sequentially within the media (the variant number
+      // itself is not an episode index).
+      const ep = series ? a.episode_number ?? idx + 1 : idx + 1
       let label = (a.label || '').trim()
       if (!label) {
         if (series) label = `Episode ${ep}`

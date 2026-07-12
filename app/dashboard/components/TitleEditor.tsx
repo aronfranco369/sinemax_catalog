@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import type { AiGroupItem, Candidate, TitleWithAttachments } from '@/lib/dashboardTypes'
+import { validateForPublish, hasVariants, type ValTitle, type ValAtt } from '@/lib/validateTitle'
 import DriveAttachPanel from './DriveAttachPanel'
 import AttachedFilesList from './AttachedFilesList'
 import CandidateGrid from './CandidateGrid'
@@ -58,6 +59,9 @@ export default function TitleEditor({
   const [trailerLoading, setTrailerLoading] = useState(false)
   const [trailerUrl, setTrailerUrl] = useState<string | null>(null)
   const [season, setSeason] = useState<number | null>(null)
+  const [publishing, setPublishing] = useState(false)
+  const [publishMsg, setPublishMsg] = useState<string | null>(null)
+  const [problems, setProblems] = useState<string[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -83,24 +87,96 @@ export default function TitleEditor({
 
   const setField = (k: keyof Fields, v: string) => setFields((f) => (f ? { ...f, [k]: v } : f))
 
+  // Assemble the shape the validator/publish logic reasons about from the
+  // current form + attachments. When a movie has multiple variants the DJ lives
+  // on each variant (in the files panel), so the top-level DJ is dropped.
+  const valInputs = (f: Fields): { title: ValTitle; atts: ValAtt[]; multi: boolean; fields: Fields } => {
+    const atts: ValAtt[] = (m?.attachments || []).map((a) => ({ episode_number: a.episode_number, dj: a.dj }))
+    const base: ValTitle = {
+      type: f.type === 'series' ? 'series' : 'movie',
+      country: f.country,
+      synopsis_sw: f.synopsis_sw,
+      dj: f.dj,
+      matched_title: f.matched_title,
+      raw_title: m?.raw_title ?? null,
+    }
+    const multi = hasVariants(base, atts)
+    const fields = multi ? { ...f, dj: '' } : f
+    return { title: { ...base, dj: fields.dj }, atts, multi, fields }
+  }
+
   const save = async (markReady: boolean) => {
     if (!fields) return
+    const { title, atts, fields: f } = valInputs(fields)
+    if (markReady) {
+      const probs = validateForPublish(title, atts)
+      if (probs.length) {
+        setProblems(probs)
+        return
+      }
+    }
+    setProblems([])
     setSaving(true)
-    const body: Record<string, unknown> = { ...fields }
+    const body: Record<string, unknown> = { ...f }
     if (markReady) body.catalog_status = 'ready'
-    await fetch(`/api/dashboard/titles/${titleId}`, {
+    const res = await fetch(`/api/dashboard/titles/${titleId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     })
     setSaving(false)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      setProblems([data.error || 'Save failed'])
+      return
+    }
     onSaved()
     if (markReady) {
       // Marking ready is a "done with this title" action — close the editor
       // and return to the catalog. Re-open the title later to add a variant.
       onClose()
     } else {
-      setM((prev) => (prev ? { ...prev, ...fields } : prev))
+      setFields(f)
+      setM((prev) => (prev ? { ...prev, ...f } : prev))
+    }
+  }
+
+  // Publish straight from the editor: persist + mark ready + publish, then close
+  // the tab so the title drops out of the ready catalog into Published.
+  const doPublish = async () => {
+    if (!fields) return
+    const { title, atts, fields: f } = valInputs(fields)
+    const probs = validateForPublish(title, atts)
+    if (probs.length) {
+      setProblems(probs)
+      return
+    }
+    setProblems([])
+    setPublishing(true)
+    setPublishMsg(null)
+    try {
+      const patchRes = await fetch(`/api/dashboard/titles/${titleId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...f, catalog_status: 'ready' }),
+      })
+      if (!patchRes.ok) {
+        const data = await patchRes.json().catch(() => ({}))
+        setPublishMsg(data.error || 'Save failed')
+        return
+      }
+      const res = await fetch(`/api/dashboard/titles/${titleId}/publish`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) {
+        setPublishMsg(data.error || 'Publish failed')
+        return
+      }
+      onSaved()
+      onClose()
+    } catch (e) {
+      setPublishMsg(e instanceof Error ? e.message : 'Publish failed')
+    } finally {
+      setPublishing(false)
     }
   }
 
@@ -207,8 +283,10 @@ export default function TitleEditor({
   }
 
   const isSeries = fields.type === 'series'
+  const multiVariant = valInputs(fields).multi
   const attachedIds = new Set((m.attachments || []).map((a) => a.drive_id).filter((x): x is string => !!x))
   const candidates = m.candidates_json || []
+  const canPublish = m.catalog_status === 'ready' || m.catalog_status === 'published'
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-start justify-center overflow-y-auto p-4">
@@ -266,7 +344,13 @@ export default function TitleEditor({
               <label className={labelCls}>
                 DJ / voiceover{m.removed_text ? ` (removed: ${m.removed_text})` : ''}
               </label>
-              <input className={inputCls} value={fields.dj} onChange={(e) => setField('dj', e.target.value)} />
+              {multiVariant ? (
+                <p className="text-[11px] text-indigo-300/80 bg-indigo-950/30 border border-indigo-900 rounded-lg px-2.5 py-1.5">
+                  Multiple variants — set the DJ on each variant in the files panel below.
+                </p>
+              ) : (
+                <input className={inputCls} value={fields.dj} onChange={(e) => setField('dj', e.target.value)} />
+              )}
             </div>
             <div className="col-span-2">
               <label className={labelCls}>Poster image URL</label>
@@ -325,7 +409,7 @@ export default function TitleEditor({
           )}
           {m.catalog_status === 'ready' && (
             <button onClick={addVariant} className="text-xs px-3 py-1.5 rounded-lg border border-blue-700 text-blue-300">
-              ⑂ Add variant (another DJ)
+              ⑂ New variant (clone title)
             </button>
           )}
           <button onClick={() => save(false)} disabled={saving} className="text-xs px-3 py-1.5 rounded-lg border border-gray-700">
@@ -334,7 +418,31 @@ export default function TitleEditor({
           <button onClick={() => save(true)} disabled={saving} className="text-xs px-3 py-1.5 rounded-lg bg-green-800">
             Save &amp; mark ready
           </button>
+          {canPublish && (
+            <button
+              onClick={doPublish}
+              disabled={publishing || saving}
+              title="Save, mark ready, and publish to the app"
+              className="text-xs px-3 py-1.5 rounded-lg bg-indigo-800 disabled:opacity-50"
+            >
+              {publishing ? 'Publishing…' : '📤 Publish'}
+            </button>
+          )}
         </div>
+
+        {problems.length > 0 && (
+          <div className="mt-3 rounded-xl border border-orange-700/60 bg-orange-950/30 p-3">
+            <p className="text-xs font-semibold text-orange-300 mb-1">Missing details — fix before publishing:</p>
+            <ul className="list-disc list-inside text-xs text-orange-100/90 space-y-0.5">
+              {problems.map((p, i) => (
+                <li key={i}>{p}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {publishMsg && (
+          <p className="mt-3 text-xs px-3 py-1.5 rounded-lg border border-orange-700 text-orange-300">⚠ {publishMsg}</p>
+        )}
 
         {trailerOpen && (
           <div className="mt-2">
