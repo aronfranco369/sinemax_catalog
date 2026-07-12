@@ -95,3 +95,33 @@ export type FolderHit = {
   path: string
   n_files: number
 }
+
+// One proposed attachment produced by the AI grouping pass over a set of
+// drive search results. Mirrors the columns a curator would otherwise fill in
+// by hand (season / episode / part / quality / dj) so it can be applied
+// straight to the attachments table after review.
+export type AiGroupItem = {
+  file_id: string
+  drive_name: string
+  drive_path: string | null
+  size: number | null
+  season: number | null
+  episode_number: number | null
+  part: string | null
+  quality: string // 'SD' | 'HD'
+  dj: string | null
+  label: string
+  note: string | null
+}
+
+export type AiGroupExcluded = {
+  file_id: string
+  drive_name: string
+  reason: string
+}
+
+export type AiGroupResult = {
+  summary: string
+  groups: AiGroupItem[]
+  excluded: AiGroupExcluded[]
+}

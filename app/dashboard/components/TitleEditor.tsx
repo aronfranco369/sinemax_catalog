@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import type { Candidate, TitleWithAttachments } from '@/lib/dashboardTypes'
+import type { AiGroupItem, Candidate, TitleWithAttachments } from '@/lib/dashboardTypes'
 import DriveAttachPanel from './DriveAttachPanel'
 import AttachedFilesList from './AttachedFilesList'
 import CandidateGrid from './CandidateGrid'
@@ -169,6 +169,25 @@ export default function TitleEditor({
     await refreshAttachments()
   }
 
+  const aiApply = async (items: AiGroupItem[], replace: boolean) => {
+    await fetch(`/api/dashboard/titles/${titleId}/attachments/ai-apply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: items.map((i) => ({
+          file_id: i.file_id,
+          season: i.season,
+          episode_number: i.episode_number,
+          label: i.label,
+          quality: i.quality,
+          dj: i.dj,
+        })),
+        replace,
+      }),
+    })
+    await refreshAttachments()
+  }
+
   if (loading || !m || !fields) {
     return (
       <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center">
@@ -318,7 +337,10 @@ export default function TitleEditor({
             <DriveAttachPanel
               attachedIds={attachedIds}
               defaultQuery={m.original_title || m.raw_title || ''}
+              isSeries={isSeries}
+              titleName={fields.matched_title || m.raw_title || ''}
               onAttach={attachFiles}
+              onAiApply={aiApply}
             />
           </div>
           <div className="flex-1 min-w-0">
