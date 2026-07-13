@@ -52,6 +52,9 @@ export default function AttachedFilesList({
   // season / DJ, so a simple title stays a flat list.
   const [selSeason, setSelSeason] = useState<number | null>(null)
   const [selDj, setSelDj] = useState<string | null>(null)
+  // Bulk DJ entry: stamp one DJ onto every episode currently in view.
+  const [bulkDj, setBulkDj] = useState('')
+  const [applyingDj, setApplyingDj] = useState(false)
 
   const groups = useMemo(() => variantGroups(attachments), [attachments])
   // A movie carries per-variant DJs only when it actually has more than one
@@ -158,6 +161,22 @@ export default function AttachedFilesList({
     const dj = value.trim() || null
     await Promise.all(atts.filter((a) => a.drive_id).map((a) => patchFile(a.drive_id!, { dj })))
     await onRefresh()
+  }
+
+  // Stamp the typed DJ onto every episode currently in view (respecting the
+  // active season / variant filter), so a whole season can be tagged at once
+  // instead of pasting the DJ into each episode row.
+  const applyBulkDj = async () => {
+    const dj = bulkDj.trim()
+    if (!dj || visible.length === 0) return
+    setApplyingDj(true)
+    try {
+      await Promise.all(visible.filter((a) => a.drive_id).map((a) => patchFile(a.drive_id!, { dj })))
+      await onRefresh()
+      setBulkDj('')
+    } finally {
+      setApplyingDj(false)
+    }
   }
 
   const fileControls = (a: AttachmentRow, idx: number) => {
@@ -340,6 +359,30 @@ export default function AttachedFilesList({
               {selDj != null ? ` · ${selDj}` : ''}
             </p>
           )}
+        </div>
+      )}
+
+      {/* Bulk-tag every episode currently in view with one DJ — useful after
+          filtering to a season whose episodes are missing their DJ. */}
+      {isSeries && attachments.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[11px] text-gray-500 flex-shrink-0">
+            Set DJ for all shown{visible.length !== attachments.length ? ` (${visible.length})` : ''}:
+          </span>
+          <input
+            value={bulkDj}
+            onChange={(e) => setBulkDj(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && applyBulkDj()}
+            placeholder="DJ name"
+            className="w-32 bg-gray-950 border border-gray-800 rounded px-2 py-1 text-xs focus:outline-none focus:border-purple-500"
+          />
+          <button
+            onClick={applyBulkDj}
+            disabled={applyingDj || !bulkDj.trim() || visible.length === 0}
+            className="text-xs px-2.5 py-1 rounded border border-purple-700 text-purple-300 disabled:opacity-40"
+          >
+            {applyingDj ? 'Applying…' : 'Apply to all shown'}
+          </button>
         </div>
       )}
 
