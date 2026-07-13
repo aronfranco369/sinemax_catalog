@@ -1,10 +1,17 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { AttachmentRow } from '@/lib/dashboardTypes'
 
 function sizeMb(bytes: number | null): string {
   return bytes ? `${Math.round(bytes / 1048576)} MB` : ''
+}
+
+// Pill styling for the series season / variant nav — filled when selected.
+function navPill(active: boolean): string {
+  return `text-xs px-2.5 py-0.5 rounded-full border ${
+    active ? 'border-indigo-500 bg-indigo-600/30 text-indigo-200' : 'border-gray-700 text-gray-400'
+  }`
 }
 
 // A movie variant is one episode_number. Files that share a number belong to
@@ -40,11 +47,56 @@ export default function AttachedFilesList({
   const [seasonInput, setSeasonInput] = useState<string>('')
   const [playingId, setPlayingId] = useState<number | null>(null)
   const [detachingAll, setDetachingAll] = useState(false)
+  // Series navigation filters: which season and which DJ variant are in view.
+  // null means "all". These only surface once a series spans more than one
+  // season / DJ, so a simple title stays a flat list.
+  const [selSeason, setSelSeason] = useState<number | null>(null)
+  const [selDj, setSelDj] = useState<string | null>(null)
 
   const groups = useMemo(() => variantGroups(attachments), [attachments])
   // A movie carries per-variant DJs only when it actually has more than one
   // variant; a single-variant movie (and every series) keeps its DJ on top.
   const multiVariant = !isSeries && groups.filter((g) => g.number > 0).length > 1
+
+  // Distinct seasons present on the attachments, used to decide whether the
+  // season navigation row is worth showing (only for >1 season).
+  const seasons = useMemo(() => {
+    const s = new Set<number>()
+    for (const a of attachments) if (a.season != null) s.add(a.season)
+    return [...s].sort((x, y) => x - y)
+  }, [attachments])
+
+  // Distinct DJs within the currently selected season (or across the whole
+  // title when no season is picked). The DJ variant row shows only for >1 DJ.
+  const djs = useMemo(() => {
+    const d = new Set<string>()
+    for (const a of attachments) {
+      if (selSeason != null && a.season !== selSeason) continue
+      const dj = (a.dj || '').trim()
+      if (dj) d.add(dj)
+    }
+    return [...d].sort((x, y) => x.localeCompare(y))
+  }, [attachments, selSeason])
+
+  // The episodes actually rendered — narrowed to the picked season + DJ.
+  const visible = useMemo(
+    () =>
+      attachments.filter((a) => {
+        if (selSeason != null && a.season !== selSeason) return false
+        if (selDj != null && (a.dj || '').trim() !== selDj) return false
+        return true
+      }),
+    [attachments, selSeason, selDj]
+  )
+
+  // Drop a selection that no longer matches any file (e.g. after re-tagging
+  // or detaching) so the list never silently hides everything.
+  useEffect(() => {
+    if (selSeason != null && !seasons.includes(selSeason)) setSelSeason(null)
+  }, [seasons, selSeason])
+  useEffect(() => {
+    if (selDj != null && !djs.includes(selDj)) setSelDj(null)
+  }, [djs, selDj])
 
   const setAllSeason = async (n: number) => {
     onSeasonChange(n)
@@ -166,6 +218,16 @@ export default function AttachedFilesList({
             onBlur={(e) => a.drive_id && patch(a.drive_id, { label: e.target.value })}
             className="flex-1 bg-gray-950 border border-gray-800 rounded px-2 py-1 text-xs"
           />
+          {isSeries && (
+            <input
+              key={a.dj ?? ''}
+              defaultValue={a.dj ?? ''}
+              placeholder="DJ"
+              title="DJ / voiceover for this episode — used to group variants"
+              onBlur={(e) => a.drive_id && patch(a.drive_id, { dj: e.target.value.trim() || null })}
+              className="w-24 bg-gray-950 border border-gray-800 rounded px-2 py-1 text-xs"
+            />
+          )}
         </div>
       </div>
     )
@@ -223,14 +285,55 @@ export default function AttachedFilesList({
         >
           {detachingAll ? 'Detaching…' : '🗑 Detach all'}
         </button>
-        <span className="text-xs text-gray-500">{attachments.length} attached</span>
+        <span className="text-xs text-gray-500">
+          {isSeries && visible.length !== attachments.length
+            ? `${visible.length} of ${attachments.length} attached`
+            : `${attachments.length} attached`}
+        </span>
       </div>
+
+      {/* Series navigation: a season row (only when the title spans more than
+          one season) over a DJ-variant row (only when a season has more than
+          one DJ). Selecting narrows the list and the count above. */}
+      {isSeries && (seasons.length > 1 || djs.length > 1) && (
+        <div className="flex flex-col gap-1.5 rounded-xl border border-gray-800 bg-gray-950/40 p-2">
+          {seasons.length > 1 && (
+            <div className="flex items-center gap-1 flex-wrap">
+              <span className="text-[11px] text-gray-500 w-12 flex-shrink-0">Season</span>
+              <button onClick={() => setSelSeason(null)} className={navPill(selSeason === null)}>
+                All
+              </button>
+              {seasons.map((s) => (
+                <button key={s} onClick={() => setSelSeason(s)} className={navPill(selSeason === s)}>
+                  S{s}
+                </button>
+              ))}
+            </div>
+          )}
+          {djs.length > 1 && (
+            <div className="flex items-center gap-1 flex-wrap">
+              <span className="text-[11px] text-gray-500 w-12 flex-shrink-0">Variant</span>
+              <button onClick={() => setSelDj(null)} className={navPill(selDj === null)}>
+                All
+              </button>
+              {djs.map((d) => (
+                <button key={d} onClick={() => setSelDj(d)} className={navPill(selDj === d)}>
+                  {d}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="max-h-[62vh] overflow-y-auto flex flex-col gap-2">
         {attachments.length === 0 && <p className="text-xs text-gray-500">No files attached yet</p>}
+        {isSeries && attachments.length > 0 && visible.length === 0 && (
+          <p className="text-xs text-gray-500">No files match the selected season / variant</p>
+        )}
 
-        {/* Series: one flat list of episodes (variants come only from cloning). */}
-        {isSeries && attachments.map((a, idx) => fileControls(a, idx))}
+        {/* Series: flat episode list, narrowed by the season / DJ nav above. */}
+        {isSeries && visible.map((a, idx) => fileControls(a, idx))}
 
         {/* Movies: grouped by variant number, with the DJ owned by the variant. */}
         {!isSeries &&
