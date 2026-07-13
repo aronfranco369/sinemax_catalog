@@ -35,13 +35,13 @@ export default function AttachedFilesList({
   titleId,
   isSeries,
   attachments,
-  onSeasonChange,
+  onAttachTargetChange,
   onRefresh,
 }: {
   titleId: number
   isSeries: boolean
   attachments: AttachmentRow[]
-  onSeasonChange: (n: number) => void
+  onAttachTargetChange: (target: { season: number | null; dj: string | null }) => void
   onRefresh: () => Promise<void>
 }) {
   const [seasonInput, setSeasonInput] = useState<string>('')
@@ -89,17 +89,27 @@ export default function AttachedFilesList({
     [attachments, selSeason, selDj]
   )
 
-  // Drop a selection that no longer matches any file (e.g. after re-tagging
-  // or detaching) so the list never silently hides everything.
+  // Drop a selection that no longer matches any tagged file so the list never
+  // silently hides everything. Guarded by length > 0 so a season picked on an
+  // untagged set (e.g. right after "Set all") survives as the attach target.
   useEffect(() => {
-    if (selSeason != null && !seasons.includes(selSeason)) setSelSeason(null)
+    if (selSeason != null && seasons.length > 0 && !seasons.includes(selSeason)) setSelSeason(null)
   }, [seasons, selSeason])
   useEffect(() => {
-    if (selDj != null && !djs.includes(selDj)) setSelDj(null)
+    if (selDj != null && djs.length > 0 && !djs.includes(selDj)) setSelDj(null)
   }, [djs, selDj])
 
+  // Keep the parent's attach target in sync with the in-view season / DJ, so
+  // newly attached files inherit exactly what the user is looking at.
+  useEffect(() => {
+    if (isSeries) onAttachTargetChange({ season: selSeason, dj: selDj })
+    else onAttachTargetChange({ season: null, dj: null })
+  }, [isSeries, selSeason, selDj, onAttachTargetChange])
+
   const setAllSeason = async (n: number) => {
-    onSeasonChange(n)
+    // Stamping every file with a season also makes that season the one in view
+    // (and thus the attach target) — reported via the selSeason effect above.
+    setSelSeason(n)
     await fetch(`/api/dashboard/titles/${titleId}/attachments/season`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -322,6 +332,13 @@ export default function AttachedFilesList({
                 </button>
               ))}
             </div>
+          )}
+          {(selSeason != null || selDj != null) && (
+            <p className="text-[11px] text-emerald-400/80">
+              + Attach adds new files to
+              {selSeason != null ? ` Season ${selSeason}` : ' all seasons'}
+              {selDj != null ? ` · ${selDj}` : ''}
+            </p>
           )}
         </div>
       )}

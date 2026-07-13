@@ -5,6 +5,7 @@ import { extractEpisodeNumber, extractPart } from '@/lib/episodeParse'
 type AttachBody = {
   files: { file_id: string; name: string }[]
   season?: number | null
+  dj?: string | null
 }
 
 // Attach one or more Drive files to a title (single or bulk). Episode
@@ -17,6 +18,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const body = (await request.json()) as AttachBody
   const files = body.files || []
   const season = body.season ?? null
+  // DJ the new files inherit — carries the currently viewed variant so files
+  // attached while a DJ filter is active land in that variant (series only).
+  const dj = (body.dj ?? '').toString().trim() || null
   if (files.length === 0) return NextResponse.json({ error: 'files required' }, { status: 400 })
 
   const supabase = supabaseServer()
@@ -65,6 +69,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       season: isSeries ? season : null,
       episode_number: episodeNumber,
       label,
+      dj: isSeries ? dj : null,
     }
   })
 

@@ -58,7 +58,13 @@ export default function TitleEditor({
   const [trailerOpen, setTrailerOpen] = useState(false)
   const [trailerLoading, setTrailerLoading] = useState(false)
   const [trailerUrl, setTrailerUrl] = useState<string | null>(null)
-  const [season, setSeason] = useState<number | null>(null)
+  // Where newly attached files land — mirrors the season/DJ filter currently
+  // in view on the attachments panel, so "+ Attach" drops files into whatever
+  // season/variant the user is looking at.
+  const [attachTarget, setAttachTarget] = useState<{ season: number | null; dj: string | null }>({
+    season: null,
+    dj: null,
+  })
   const [publishing, setPublishing] = useState(false)
   const [publishMsg, setPublishMsg] = useState<string | null>(null)
   const [problems, setProblems] = useState<string[]>([])
@@ -71,7 +77,7 @@ export default function TitleEditor({
     setFields(fieldsFrom(data))
     setTrailerOpen(false)
     setTrailerUrl(null)
-    setSeason(null)
+    setAttachTarget({ season: null, dj: null })
     setLoading(false)
   }, [titleId])
 
@@ -241,7 +247,11 @@ export default function TitleEditor({
     await fetch(`/api/dashboard/titles/${titleId}/attachments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: files.map((f) => ({ file_id: f.id, name: f.name })), season }),
+      body: JSON.stringify({
+        files: files.map((f) => ({ file_id: f.id, name: f.name })),
+        season: attachTarget.season,
+        dj: attachTarget.dj,
+      }),
     })
     await refreshAttachments()
   }
@@ -457,7 +467,7 @@ export default function TitleEditor({
               titleId={titleId}
               isSeries={isSeries}
               attachments={m.attachments || []}
-              onSeasonChange={setSeason}
+              onAttachTargetChange={setAttachTarget}
               onRefresh={refreshAttachments}
             />
           </div>
