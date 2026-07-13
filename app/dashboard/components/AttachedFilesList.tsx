@@ -131,12 +131,31 @@ export default function AttachedFilesList({
     await onRefresh()
   }
 
+  // Detach honours the active view: with a season/variant filter on, only the
+  // episodes in view go; with no filter it clears the whole title in one call.
   const detachAll = async () => {
-    if (attachments.length === 0) return
-    if (!confirm(`Detach all ${attachments.length} file(s)? This starts the attachments fresh.`)) return
+    const filtered = visible.length !== attachments.length
+    const targets = filtered ? visible : attachments
+    if (targets.length === 0) return
+    const msg = filtered
+      ? `Detach the ${targets.length} file(s) currently shown? The rest of the title stays attached.`
+      : `Detach all ${attachments.length} file(s)? This starts the attachments fresh.`
+    if (!confirm(msg)) return
     setDetachingAll(true)
     try {
-      await fetch(`/api/dashboard/titles/${titleId}/attachments`, { method: 'DELETE' })
+      if (filtered) {
+        await Promise.all(
+          targets
+            .filter((a) => a.drive_id)
+            .map((a) =>
+              fetch(`/api/dashboard/titles/${titleId}/attachments/${encodeURIComponent(a.drive_id!)}`, {
+                method: 'DELETE',
+              })
+            )
+        )
+      } else {
+        await fetch(`/api/dashboard/titles/${titleId}/attachments`, { method: 'DELETE' })
+      }
       await onRefresh()
     } finally {
       setDetachingAll(false)
@@ -312,7 +331,11 @@ export default function AttachedFilesList({
           disabled={detachingAll || attachments.length === 0}
           className="text-xs px-2 py-1 rounded border border-red-800 text-red-400 disabled:opacity-40"
         >
-          {detachingAll ? 'Detaching…' : '🗑 Detach all'}
+          {detachingAll
+            ? 'Detaching…'
+            : visible.length !== attachments.length
+              ? `🗑 Detach shown (${visible.length})`
+              : '🗑 Detach all'}
         </button>
         <span className="text-xs text-gray-500">
           {isSeries && visible.length !== attachments.length
