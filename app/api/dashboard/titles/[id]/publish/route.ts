@@ -105,12 +105,24 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   }
 
   // Split the attachments into media rows, preserving order:
-  //   - Series: one media carrying the title's DJ; its files are the episodes.
+  //   - Series: one media per DJ. Each episode's effective DJ is its own tag,
+  //             falling back to the title's DJ; a single-DJ show yields one
+  //             media, a multi-DJ show one per DJ (each with its episodes).
   //   - Movie:  one media per variant number; its files are that variant's parts
   //             (a shared number that repeats = the same movie split into parts).
   const groups: { dj: string; atts: AttRow[] }[] = []
   if (series) {
-    groups.push({ dj: (title.dj || '').trim(), atts: attachments })
+    const byDj = new Map<string, AttRow[]>()
+    const order: string[] = []
+    for (const a of attachments) {
+      const dj = (a.dj || '').trim() || (title.dj || '').trim()
+      if (!byDj.has(dj)) {
+        byDj.set(dj, [])
+        order.push(dj)
+      }
+      byDj.get(dj)!.push(a)
+    }
+    for (const dj of order) groups.push({ dj, atts: byDj.get(dj)! })
   } else {
     const byNumber = new Map<number, AttRow[]>()
     const order: number[] = []

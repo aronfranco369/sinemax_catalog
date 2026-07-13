@@ -6,13 +6,15 @@
 //   - A MOVIE variant is a unique episode_number. Files that share a number are
 //     one variant (its parts and/or quality cuts). A different DJ means a new
 //     number, i.e. a new variant.
-//   - A SERIES never carries per-title variants — its episode_number is just the
-//     episode index and its single DJ lives on the title. Extra DJ cuts of a
-//     series are separate cloned titles (the "New variant" button).
+//   - A SERIES uses episode_number as the episode index. Its DJ may live on the
+//     top-level title (one DJ for the whole show) OR on the individual episodes
+//     (multiple DJs, tagged in the attachments panel). Each episode just needs
+//     an effective DJ — its own tag, or the top-level DJ as a fallback — and the
+//     publisher splits the episodes into one media per DJ.
 //
-// DJ placement is therefore exclusive ("not all at once"): a title with more
-// than one variant tags the DJ on each variant's files; a single-variant title
-// (and every series) carries the DJ on the top-level title field.
+// DJ placement for a MOVIE is exclusive: a multi-variant movie tags the DJ on
+// each variant's files, a single-variant movie carries it on the top field. A
+// SERIES is more permissive — top DJ, per-episode DJs, or both (top as default).
 
 export type ValTitle = {
   type: string | null
@@ -87,10 +89,27 @@ export function validateForPublish(title: ValTitle, attachments: ValAtt[]): stri
     problems.push('Every movie file needs a variant number (episode number).')
   }
 
-  // DJ placement — exclusive by title shape.
+  // DJ placement.
   const multi = hasVariants(title, attachments)
   const topDj = (title.dj || '').trim()
-  if (multi) {
+  if (series) {
+    // A series' DJ can live on the top field (one DJ for the whole show) or be
+    // tagged per-episode in the attachments panel (multiple DJs). Every episode
+    // just needs an effective DJ — its own tag, or the top-level DJ as fallback
+    // — so only flag when the top DJ is empty and some episode is still
+    // untagged, and point at the episodes, not the top field.
+    if (!topDj && attachments.length > 0) {
+      const untagged = attachments.filter((a) => !(a.dj || '').trim()).length
+      if (untagged === attachments.length) {
+        problems.push('DJ is required — set it in the top details, or tag each episode with its DJ in the attachments panel.')
+      } else if (untagged > 0) {
+        problems.push(`${untagged} episode(s) have no DJ — tag every episode in the attachments panel, or set a top-level DJ as the fallback.`)
+      }
+    } else if (!topDj) {
+      // No files yet: a single-DJ series still needs a DJ somewhere.
+      problems.push('DJ is required — set it in the top details, or tag each episode with its DJ.')
+    }
+  } else if (multi) {
     if (topDj) {
       problems.push('This title uses per-variant DJs — clear the top-level DJ field.')
     }
