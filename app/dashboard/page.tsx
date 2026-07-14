@@ -37,7 +37,10 @@ export default function DashboardPage() {
     if (filters.status) params.set('status', filters.status)
     if (filters.tier) params.set('tier', filters.tier)
     if (filters.type) params.set('type', filters.type)
-    if (filters.sort) params.set('sort', filters.sort)
+    // Ready view defaults to newest-entered-first (created_at desc) unless the
+    // user picks an explicit sort; other views keep the title A–Z default.
+    const sort = filters.sort || (view === 'ready' ? 'created_desc' : '')
+    if (sort) params.set('sort', sort)
     const catalog = view === 'ready' ? 'ready' : view === 'published' ? 'published' : 'not_ready'
     params.set('catalog', catalog)
     const res = await fetch(`/api/dashboard/titles?${params}`)
