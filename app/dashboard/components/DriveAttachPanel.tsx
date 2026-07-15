@@ -112,7 +112,7 @@ function FolderTreeNode({
   name: string
   videosOnly: boolean
   attachedIds: Set<string>
-  onAttachFiles: (files: { id: string; name: string }[]) => void
+  onAttachFiles: (files: { id: string; name: string; size: number | null }[]) => void
   playingId: string | null
   onTogglePlay: (file: DriveFileHit | null) => void
   depth?: number
@@ -149,7 +149,7 @@ function FolderTreeNode({
       `/api/dashboard/drive/folder-contents?path=${encodeURIComponent(path)}&videosOnly=${videosOnly}&recursive=true`
     )
     const data = await res.json()
-    onAttachFiles((data.files || []).map((f: DriveFileHit) => ({ id: f.id, name: f.name })))
+    onAttachFiles((data.files || []).map((f: DriveFileHit) => ({ id: f.id, name: f.name, size: f.size })))
   }
 
   return (
@@ -187,7 +187,7 @@ function FolderTreeNode({
                 attached={attachedIds.has(f.id)}
                 playing={playingId === f.id}
                 onTogglePlay={() => onTogglePlay(playingId === f.id ? null : f)}
-                onAttach={() => onAttachFiles([{ id: f.id, name: f.name }])}
+                onAttach={() => onAttachFiles([{ id: f.id, name: f.name, size: f.size }])}
                 onOpenFolder={() => {}}
               />
             ))}
@@ -207,7 +207,7 @@ export default function DriveAttachPanel({
 }: {
   attachedIds: Set<string>
   defaultQuery: string
-  onAttach: (files: { id: string; name: string }[]) => Promise<void>
+  onAttach: (files: { id: string; name: string; size: number | null }[]) => Promise<void>
 }) {
   const [mode, setMode] = useState<'files' | 'folders'>('files')
   const [videosOnly, setVideosOnly] = useState(true)
@@ -272,7 +272,7 @@ export default function DriveAttachPanel({
   }
 
   const attachAllResults = async () => {
-    const toAttach = fileResults.filter((f) => !attachedIds.has(f.id)).map((f) => ({ id: f.id, name: f.name }))
+    const toAttach = fileResults.filter((f) => !attachedIds.has(f.id)).map((f) => ({ id: f.id, name: f.name, size: f.size }))
     if (toAttach.length === 0) return
     await onAttach(toAttach)
   }
@@ -394,7 +394,7 @@ export default function DriveAttachPanel({
               attached={attachedIds.has(f.id)}
               playing={playing?.id === f.id}
               onTogglePlay={() => setPlaying(playing?.id === f.id ? null : f)}
-              onAttach={() => onAttach([{ id: f.id, name: f.name }])}
+              onAttach={() => onAttach([{ id: f.id, name: f.name, size: f.size }])}
               onOpenFolder={() => setTreeRoot({ path: folderOf(f.path), name: folderOf(f.path).split('/').pop() || 'folder' })}
             />
           ))}
@@ -415,7 +415,7 @@ export default function DriveAttachPanel({
                   `/api/dashboard/drive/folder-contents?path=${encodeURIComponent(f.path)}&videosOnly=${videosOnly}&recursive=true`
                 )
                 const data = await res.json()
-                await onAttach((data.files || []).map((x: DriveFileHit) => ({ id: x.id, name: x.name })))
+                await onAttach((data.files || []).map((x: DriveFileHit) => ({ id: x.id, name: x.name, size: x.size })))
               }}
               onOpen={() => setTreeRoot({ path: f.path, name: f.name })}
             />

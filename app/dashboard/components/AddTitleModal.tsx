@@ -5,7 +5,7 @@ import type { Candidate } from '@/lib/dashboardTypes'
 import DriveAttachPanel from './DriveAttachPanel'
 import CandidateGrid from './CandidateGrid'
 
-type PendingFile = { id: string; name: string }
+type PendingFile = { id: string; name: string; size: number | null }
 
 /**
  * "Add a title from Drive files" — for content that exists on Drive but was
@@ -30,7 +30,7 @@ export default function AddTitleModal({
   const [tmdbError, setTmdbError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
 
-  const addPending = async (files: { id: string; name: string }[]) => {
+  const addPending = async (files: { id: string; name: string; size: number | null }[]) => {
     setPendingFiles((prev) => {
       const seen = new Set(prev.map((f) => f.id))
       const merged = [...prev]
@@ -88,7 +88,10 @@ export default function AddTitleModal({
         await fetch(`/api/dashboard/titles/${data.id}/attachments`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ files: pendingFiles, season: null }),
+          body: JSON.stringify({
+            files: pendingFiles.map((f) => ({ file_id: f.id, name: f.name, size: f.size })),
+            season: null,
+          }),
         })
       }
       onCreated(data.id)

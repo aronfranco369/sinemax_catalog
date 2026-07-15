@@ -243,12 +243,12 @@ export default function TitleEditor({
     setTrailerOpen(true)
   }
 
-  const attachFiles = async (files: { id: string; name: string }[]) => {
+  const attachFiles = async (files: { id: string; name: string; size: number | null }[]) => {
     await fetch(`/api/dashboard/titles/${titleId}/attachments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        files: files.map((f) => ({ file_id: f.id, name: f.name })),
+        files: files.map((f) => ({ file_id: f.id, name: f.name, size: f.size })),
         season: attachTarget.season,
         dj: attachTarget.dj,
       }),

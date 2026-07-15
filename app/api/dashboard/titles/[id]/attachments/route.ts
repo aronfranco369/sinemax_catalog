@@ -3,10 +3,15 @@ import { supabaseServer } from '@/lib/supabaseServer'
 import { extractEpisodeNumber, extractPart } from '@/lib/episodeParse'
 
 type AttachBody = {
-  files: { file_id: string; name: string }[]
+  files: { file_id: string; name: string; size?: number | null }[]
   season?: number | null
   dj?: string | null
 }
+
+// Movies attach with a quality stamped from file size: anything over 650 MB is
+// treated as HD, everything else SD. It's just the starting guess — the SD/HD
+// toggle on each attachment lets it be changed by hand afterwards.
+const HD_THRESHOLD_BYTES = 650 * 1024 * 1024
 
 // Attach one or more Drive files to a title (single or bulk). Episode
 // number comes from the filename (extractEpisodeNumber), not attach order,
@@ -63,6 +68,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       label = title.matched_title || title.raw_title || ''
       fallback += 1
     }
+    // Series episodes carry no quality; a movie gets HD/SD from its size.
+    const quality = isSeries ? null : (f.size ?? 0) > HD_THRESHOLD_BYTES ? 'HD' : 'SD'
     return {
       title_id: titleId,
       file_id: f.file_id,
@@ -70,6 +77,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       episode_number: episodeNumber,
       label,
       dj: isSeries ? dj : null,
+      quality,
     }
   })
 
