@@ -204,6 +204,7 @@ export default function AttachedFilesList({
     if (!confirm(`Detach all ${targets.length} file(s) of ${label}? Other variants stay attached.`)) return
     setDetachingVariant(number)
     try {
+      const droppedIds = new Set(targets.map((a) => a.drive_id))
       await Promise.all(
         targets.map((a) =>
           fetch(`/api/dashboard/titles/${titleId}/attachments/${encodeURIComponent(a.drive_id!)}`, {
@@ -211,6 +212,26 @@ export default function AttachedFilesList({
           })
         )
       )
+      // Close the gap the removed variant leaves: compact the remaining numbered
+      // variants down so 1,2,3 minus #2 becomes 1,2 (the old #3 is now #2). Files
+      // sharing a variant number move together, so multi-part variants stay whole.
+      // The un-numbered bucket (#0) is left as-is.
+      if (number > 0) {
+        const kept = attachments.filter((a) => a.drive_id && !droppedIds.has(a.drive_id))
+        const remaining = [...new Set(kept.map((a) => a.episode_number ?? 0).filter((n) => n > 0))].sort(
+          (x, y) => x - y
+        )
+        const remap = new Map<number, number>()
+        remaining.forEach((old, i) => remap.set(old, i + 1))
+        await Promise.all(
+          kept
+            .filter((a) => {
+              const old = a.episode_number ?? 0
+              return old > 0 && remap.get(old) !== old
+            })
+            .map((a) => patchFile(a.drive_id!, { episode_number: remap.get(a.episode_number ?? 0) }))
+        )
+      }
       await onRefresh()
     } finally {
       setDetachingVariant(null)
