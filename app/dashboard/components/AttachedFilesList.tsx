@@ -7,6 +7,10 @@ function sizeMb(bytes: number | null): string {
   return bytes ? `${Math.round(bytes / 1048576)} MB` : ''
 }
 
+// Sentinel for the "Others" DJ chip — selects episodes that carry no DJ string.
+// A control character keeps it from ever colliding with a real DJ name.
+const OTHERS_DJ = '\u0000others'
+
 // Pill styling for the series season / variant nav — filled when selected.
 function navPill(active: boolean): string {
   return `text-xs px-2.5 py-0.5 rounded-full border ${
@@ -81,12 +85,30 @@ export default function AttachedFilesList({
     return [...d].sort((x, y) => x.localeCompare(y))
   }, [attachments, selSeason])
 
-  // The episodes actually rendered — narrowed to the picked season + DJ.
+  // Whether the current season has any episode with an empty DJ. These would
+  // otherwise only be reachable through "All"; the "Others" chip isolates them.
+  const hasOthers = useMemo(() => {
+    for (const a of attachments) {
+      if (selSeason != null && a.season !== selSeason) continue
+      if (!(a.dj || '').trim()) return true
+    }
+    return false
+  }, [attachments, selSeason])
+
+  // Show the DJ / variant row when there's more than one named DJ, or when a
+  // single named DJ coexists with untagged episodes (so "Others" can split them).
+  const showDjRow = djs.length > 1 || (djs.length >= 1 && hasOthers)
+
+  // The episodes actually rendered — narrowed to the picked season + DJ. The
+  // "Others" selection keeps only the episodes whose DJ string is empty.
   const visible = useMemo(
     () =>
       attachments.filter((a) => {
         if (selSeason != null && a.season !== selSeason) return false
-        if (selDj != null && (a.dj || '').trim() !== selDj) return false
+        if (selDj != null) {
+          const dj = (a.dj || '').trim()
+          if (selDj === OTHERS_DJ ? dj !== '' : dj !== selDj) return false
+        }
         return true
       }),
     [attachments, selSeason, selDj]
@@ -99,13 +121,21 @@ export default function AttachedFilesList({
     if (selSeason != null && seasons.length > 0 && !seasons.includes(selSeason)) setSelSeason(null)
   }, [seasons, selSeason])
   useEffect(() => {
-    if (selDj != null && djs.length > 0 && !djs.includes(selDj)) setSelDj(null)
-  }, [djs, selDj])
+    if (selDj == null) return
+    // "Others" survives as long as some untagged episode remains; a named DJ
+    // survives as long as it still tags a file in view.
+    if (selDj === OTHERS_DJ) {
+      if (!hasOthers) setSelDj(null)
+    } else if (djs.length > 0 && !djs.includes(selDj)) {
+      setSelDj(null)
+    }
+  }, [djs, selDj, hasOthers])
 
   // Keep the parent's attach target in sync with the in-view season / DJ, so
   // newly attached files inherit exactly what the user is looking at.
   useEffect(() => {
-    if (isSeries) onAttachTargetChange({ season: selSeason, dj: selDj })
+    // "Others" means "no DJ", so files attached under it inherit an empty DJ.
+    if (isSeries) onAttachTargetChange({ season: selSeason, dj: selDj === OTHERS_DJ ? null : selDj })
     else onAttachTargetChange({ season: null, dj: null })
   }, [isSeries, selSeason, selDj, onAttachTargetChange])
 
@@ -347,7 +377,7 @@ export default function AttachedFilesList({
       {/* Series navigation: a season row (only when the title spans more than
           one season) over a DJ-variant row (only when a season has more than
           one DJ). Selecting narrows the list and the count above. */}
-      {isSeries && (seasons.length > 1 || djs.length > 1) && (
+      {isSeries && (seasons.length > 1 || showDjRow) && (
         <div className="flex flex-col gap-1.5 rounded-xl border border-gray-800 bg-gray-950/40 p-2">
           {seasons.length > 1 && (
             <div className="flex items-center gap-1 flex-wrap">
@@ -362,7 +392,7 @@ export default function AttachedFilesList({
               ))}
             </div>
           )}
-          {djs.length > 1 && (
+          {showDjRow && (
             <div className="flex items-center gap-1 flex-wrap">
               <span className="text-[11px] text-gray-500 w-12 flex-shrink-0">Variant</span>
               <button onClick={() => setSelDj(null)} className={navPill(selDj === null)}>
@@ -373,13 +403,24 @@ export default function AttachedFilesList({
                   {d}
                 </button>
               ))}
+              {/* Only when some episodes carry no DJ — lets them be reached on
+                  their own instead of being buried inside "All". */}
+              {hasOthers && (
+                <button
+                  onClick={() => setSelDj(OTHERS_DJ)}
+                  className={navPill(selDj === OTHERS_DJ)}
+                  title="Episodes with no DJ set"
+                >
+                  Others
+                </button>
+              )}
             </div>
           )}
           {(selSeason != null || selDj != null) && (
             <p className="text-[11px] text-emerald-400/80">
               + Attach adds new files to
               {selSeason != null ? ` Season ${selSeason}` : ' all seasons'}
-              {selDj != null ? ` · ${selDj}` : ''}
+              {selDj != null ? (selDj === OTHERS_DJ ? ' · no DJ' : ` · ${selDj}`) : ''}
             </p>
           )}
         </div>
