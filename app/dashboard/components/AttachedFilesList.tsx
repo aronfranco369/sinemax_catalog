@@ -51,6 +51,9 @@ export default function AttachedFilesList({
   const [seasonInput, setSeasonInput] = useState<string>('')
   const [playingId, setPlayingId] = useState<number | null>(null)
   const [detachingAll, setDetachingAll] = useState(false)
+  // Which movie variant group is mid-detach, keyed by its variant number, so
+  // only that card's button shows a spinner.
+  const [detachingVariant, setDetachingVariant] = useState<number | null>(null)
   // Series navigation filters: which season and which DJ variant are in view.
   // null means "all". These only surface once a series spans more than one
   // season / DJ, so a simple title stays a flat list.
@@ -189,6 +192,28 @@ export default function AttachedFilesList({
       await onRefresh()
     } finally {
       setDetachingAll(false)
+    }
+  }
+
+  // Detach every file of one movie variant (all its parts / cuts) in a single
+  // action, leaving the title's other variants untouched.
+  const detachVariant = async (number: number, atts: AttachmentRow[]) => {
+    const targets = atts.filter((a) => a.drive_id)
+    if (targets.length === 0) return
+    const label = number > 0 ? `Variant #${number}` : 'the un-numbered variant'
+    if (!confirm(`Detach all ${targets.length} file(s) of ${label}? Other variants stay attached.`)) return
+    setDetachingVariant(number)
+    try {
+      await Promise.all(
+        targets.map((a) =>
+          fetch(`/api/dashboard/titles/${titleId}/attachments/${encodeURIComponent(a.drive_id!)}`, {
+            method: 'DELETE',
+          })
+        )
+      )
+      await onRefresh()
+    } finally {
+      setDetachingVariant(null)
     }
   }
 
@@ -491,6 +516,19 @@ export default function AttachedFilesList({
                         groupDj ? 'border-purple-600 text-purple-300' : 'border-dashed border-gray-700 text-gray-500'
                       }`}
                     />
+                  )}
+                  {/* Only worth offering when other variants remain — otherwise
+                      the top "Detach all" already covers it. Removes this
+                      variant's parts/cuts in one click. */}
+                  {groups.length > 1 && (
+                    <button
+                      onClick={() => detachVariant(g.number, g.atts)}
+                      disabled={detachingVariant !== null}
+                      title="Detach this variant and all its parts"
+                      className="ml-auto text-[10px] px-2 py-0.5 rounded-full border border-red-800/70 text-red-300 hover:bg-red-950/40 disabled:opacity-40"
+                    >
+                      {detachingVariant === g.number ? 'Detaching…' : '🗑 Detach variant'}
+                    </button>
                   )}
                 </div>
                 <div className="flex flex-col gap-2">{g.atts.map((a, idx) => fileControls(a, idx))}</div>
