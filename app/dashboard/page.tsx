@@ -37,9 +37,11 @@ export default function DashboardPage() {
     if (filters.status) params.set('status', filters.status)
     if (filters.tier) params.set('tier', filters.tier)
     if (filters.type) params.set('type', filters.type)
-    // Ready view defaults to newest-entered-first (created_at desc) unless the
-    // user picks an explicit sort; other views keep the title A–Z default.
-    const sort = filters.sort || (view === 'ready' ? 'created_desc' : '')
+    // Ready view defaults to most-recently-curated-first (updated_at desc)
+    // unless the user picks an explicit sort; other views keep the title A–Z
+    // default. updated_at (not created_at) is used because most titles share a
+    // single backfill created_at, so marking one ready wouldn't surface it.
+    const sort = filters.sort || (view === 'ready' ? 'updated_desc' : '')
     if (sort) params.set('sort', sort)
     const catalog = view === 'ready' ? 'ready' : view === 'published' ? 'published' : 'not_ready'
     params.set('catalog', catalog)
